@@ -1,0 +1,6 @@
+{
+  "name": "مخطط البناء بالذكاء الاصطناعي 3D",
+  "description": "تطبيق مهندس معمار ذكي لتوليد مخططات المنازل ثنائية وثلاثية الأبعاد وحساب المساحات والأعمدة والواجهات تفاعلياً",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
