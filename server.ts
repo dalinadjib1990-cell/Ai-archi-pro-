@@ -12,6 +12,17 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
+// CORS middleware for Vercel and multi-domain access
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Lazy initialize Gemini AI client
 const getAIClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -388,141 +399,148 @@ app.post('/api/generate-plan', async (req, res) => {
 `;
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: promptText,
-        config: {
-          systemInstruction: 'أنت مهندس معماري ومدني متخصص في التصميم وتوليد البيانات الهندسية والمخططات 2D و3D بصيغة JSON دقيقة باللغة العربية.',
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              specs: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  summary: { type: Type.STRING },
-                  totalLandArea: { type: Type.NUMBER },
-                  totalBuiltArea: { type: Type.NUMBER },
-                  buildingFootprintArea: { type: Type.NUMBER },
-                  recommendedColumnsCount: { type: Type.NUMBER },
-                  columnsReasoning: { type: Type.STRING },
-                  orientationNotes: { type: Type.STRING },
-                  ventilationNotes: { type: Type.STRING },
-                  structuralNotes: { type: Type.STRING },
-                  estimatedCostMin: { type: Type.NUMBER },
-                  estimatedCostMax: { type: Type.NUMBER },
-                  currency: { type: Type.STRING },
-                  estimatedConcreteM3: { type: Type.NUMBER },
-                  estimatedSteelTons: { type: Type.NUMBER },
-                  estimatedBricksCount: { type: Type.NUMBER }
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('AI generation timeout')), 6500)
+      );
+
+      const response: any = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: promptText,
+          config: {
+            systemInstruction: 'أنت مهندس معماري ومدني متخصص في التصميم وتوليد البيانات الهندسية والمخططات 2D و3D بصيغة JSON دقيقة باللغة العربية.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                specs: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    summary: { type: Type.STRING },
+                    totalLandArea: { type: Type.NUMBER },
+                    totalBuiltArea: { type: Type.NUMBER },
+                    buildingFootprintArea: { type: Type.NUMBER },
+                    recommendedColumnsCount: { type: Type.NUMBER },
+                    columnsReasoning: { type: Type.STRING },
+                    orientationNotes: { type: Type.STRING },
+                    ventilationNotes: { type: Type.STRING },
+                    structuralNotes: { type: Type.STRING },
+                    estimatedCostMin: { type: Type.NUMBER },
+                    estimatedCostMax: { type: Type.NUMBER },
+                    currency: { type: Type.STRING },
+                    estimatedConcreteM3: { type: Type.NUMBER },
+                    estimatedSteelTons: { type: Type.NUMBER },
+                    estimatedBricksCount: { type: Type.NUMBER }
+                  },
+                  required: ['title', 'summary', 'totalLandArea', 'totalBuiltArea', 'recommendedColumnsCount', 'estimatedCostMin', 'estimatedCostMax']
                 },
-                required: ['title', 'summary', 'totalLandArea', 'totalBuiltArea', 'recommendedColumnsCount', 'estimatedCostMin', 'estimatedCostMax']
-              },
-              rooms: {
-                type: Type.ARRAY,
-                items: {
+                rooms: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      nameAr: { type: Type.STRING },
+                      nameEn: { type: Type.STRING },
+                      width: { type: Type.NUMBER },
+                      length: { type: Type.NUMBER },
+                      area: { type: Type.NUMBER },
+                      floor: { type: Type.NUMBER },
+                      color: { type: Type.STRING },
+                      description: { type: Type.STRING },
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER },
+                      category: { type: Type.STRING }
+                    },
+                    required: ['id', 'nameAr', 'width', 'length', 'area', 'floor', 'x', 'y', 'category']
+                  }
+                },
+                columns: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER },
+                      sizeX: { type: Type.NUMBER },
+                      sizeY: { type: Type.NUMBER },
+                      gridAxis: { type: Type.STRING },
+                      floorSpan: { type: Type.STRING }
+                    },
+                    required: ['id', 'x', 'y', 'gridAxis']
+                  }
+                },
+                walls: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      x1: { type: Type.NUMBER },
+                      y1: { type: Type.NUMBER },
+                      x2: { type: Type.NUMBER },
+                      y2: { type: Type.NUMBER },
+                      thickness: { type: Type.NUMBER },
+                      isExterior: { type: Type.BOOLEAN },
+                      floor: { type: Type.NUMBER }
+                    },
+                    required: ['id', 'x1', 'y1', 'x2', 'y2', 'isExterior', 'floor']
+                  }
+                },
+                openings: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER },
+                      width: { type: Type.NUMBER },
+                      rotation: { type: Type.NUMBER },
+                      label: { type: Type.STRING },
+                      floor: { type: Type.NUMBER }
+                    },
+                    required: ['id', 'type', 'x', 'y', 'width', 'floor']
+                  }
+                },
+                furniture: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      label: { type: Type.STRING },
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER },
+                      width: { type: Type.NUMBER },
+                      depth: { type: Type.NUMBER },
+                      rotation: { type: Type.NUMBER },
+                      floor: { type: Type.NUMBER }
+                    },
+                    required: ['id', 'type', 'label', 'x', 'y', 'floor']
+                  }
+                },
+                materials: {
                   type: Type.OBJECT,
                   properties: {
-                    id: { type: Type.STRING },
-                    nameAr: { type: Type.STRING },
-                    nameEn: { type: Type.STRING },
-                    width: { type: Type.NUMBER },
-                    length: { type: Type.NUMBER },
-                    area: { type: Type.NUMBER },
-                    floor: { type: Type.NUMBER },
-                    color: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    x: { type: Type.NUMBER },
-                    y: { type: Type.NUMBER },
-                    category: { type: Type.STRING }
-                  },
-                  required: ['id', 'nameAr', 'width', 'length', 'area', 'floor', 'x', 'y', 'category']
+                    exteriorWallColor: { type: Type.STRING },
+                    interiorWallColor: { type: Type.STRING },
+                    roofColor: { type: Type.STRING },
+                    windowFrameColor: { type: Type.STRING },
+                    floorMaterial: { type: Type.STRING }
+                  }
                 }
               },
-              columns: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    x: { type: Type.NUMBER },
-                    y: { type: Type.NUMBER },
-                    sizeX: { type: Type.NUMBER },
-                    sizeY: { type: Type.NUMBER },
-                    gridAxis: { type: Type.STRING },
-                    floorSpan: { type: Type.STRING }
-                  },
-                  required: ['id', 'x', 'y', 'gridAxis']
-                }
-              },
-              walls: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    x1: { type: Type.NUMBER },
-                    y1: { type: Type.NUMBER },
-                    x2: { type: Type.NUMBER },
-                    y2: { type: Type.NUMBER },
-                    thickness: { type: Type.NUMBER },
-                    isExterior: { type: Type.BOOLEAN },
-                    floor: { type: Type.NUMBER }
-                  },
-                  required: ['id', 'x1', 'y1', 'x2', 'y2', 'isExterior', 'floor']
-                }
-              },
-              openings: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    type: { type: Type.STRING },
-                    x: { type: Type.NUMBER },
-                    y: { type: Type.NUMBER },
-                    width: { type: Type.NUMBER },
-                    rotation: { type: Type.NUMBER },
-                    label: { type: Type.STRING },
-                    floor: { type: Type.NUMBER }
-                  },
-                  required: ['id', 'type', 'x', 'y', 'width', 'floor']
-                }
-              },
-              furniture: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    type: { type: Type.STRING },
-                    label: { type: Type.STRING },
-                    x: { type: Type.NUMBER },
-                    y: { type: Type.NUMBER },
-                    width: { type: Type.NUMBER },
-                    depth: { type: Type.NUMBER },
-                    rotation: { type: Type.NUMBER },
-                    floor: { type: Type.NUMBER }
-                  },
-                  required: ['id', 'type', 'label', 'x', 'y', 'floor']
-                }
-              },
-              materials: {
-                type: Type.OBJECT,
-                properties: {
-                  exteriorWallColor: { type: Type.STRING },
-                  interiorWallColor: { type: Type.STRING },
-                  roofColor: { type: Type.STRING },
-                  windowFrameColor: { type: Type.STRING },
-                  floorMaterial: { type: Type.STRING }
-                }
-              }
-            },
-            required: ['specs', 'rooms', 'columns', 'walls']
+              required: ['specs', 'rooms', 'columns', 'walls']
+            }
           }
-        }
-      });
+        }),
+        timeoutPromise
+      ]);
 
       const jsonString = response.text ? response.text.trim() : '';
       const parsedData = JSON.parse(jsonString);
@@ -672,4 +690,8 @@ async function startServer() {
   });
 }
 
-startServer();
+export default app;
+
+if (!process.env.VERCEL) {
+  startServer();
+}
