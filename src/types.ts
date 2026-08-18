@@ -113,9 +113,20 @@ export interface FacadeImageData {
   prompt: string;
 }
 
+export interface AIOptionPlan {
+  optionId: string;
+  optionTitle: string; // e.g. "الخيار الأول: توزيع مفتوح مع فناء"
+  optionBadge: string; // e.g. "أعلى استغلال للمساحة ✨"
+  optionDescription: string; // e.g. "تصميم يركز على الفضاءات المفتوحة مع ربط الصالة بالحديقة والإضاءة المباشرة."
+  plan: GeneratedHousePlan;
+}
+
 export interface GeneratedHousePlan {
   id: string;
   timestamp: string;
+  optionTitle?: string;
+  optionBadge?: string;
+  optionDescription?: string;
   params: HouseInputParams;
   specs: ArchitecturalSpecs;
   rooms: RoomData[];

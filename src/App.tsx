@@ -7,7 +7,10 @@ import {
   Image,
   Sparkles,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  LayoutGrid,
+  Check,
+  RotateCw
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { InputForm } from './components/InputForm';
@@ -18,16 +21,27 @@ import { FacadeGallery } from './components/FacadeGallery';
 import { PrintReportModal } from './components/PrintReportModal';
 import { HouseInputParams, GeneratedHousePlan, Currency } from './types';
 import { DEFAULT_HOUSE_PLAN } from './data/presetTemplates';
-import { generateProceduralPlan } from './utils/proceduralGenerator';
+import { generateMultipleProceduralOptions } from './utils/proceduralGenerator';
 
 export default function App() {
   const [params, setParams] = useState<HouseInputParams>({ ...DEFAULT_HOUSE_PLAN.params });
-  const [currentPlan, setCurrentPlan] = useState<GeneratedHousePlan>(DEFAULT_HOUSE_PLAN);
+  const [generatedPlans, setGeneratedPlans] = useState<GeneratedHousePlan[]>(() =>
+    generateMultipleProceduralOptions(DEFAULT_HOUSE_PLAN.params)
+  );
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [currency, setCurrency] = useState<Currency>('SAR');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'2d' | '3d' | 'specs' | 'facades'>('3d');
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const currentPlan = generatedPlans[selectedOptionIndex] || generatedPlans[0] || DEFAULT_HOUSE_PLAN;
+
+  // Sync procedural options whenever inputs/params change (so live changes update instant 3 options)
+  React.useEffect(() => {
+    const liveOptions = generateMultipleProceduralOptions(params);
+    setGeneratedPlans(liveOptions);
+  }, [params]);
 
   // Handle AI House Generation
   const handleGenerate = async () => {
@@ -47,20 +61,23 @@ export default function App() {
 
       const data = await response.json();
 
-      if (data.success && data.plan) {
-        setCurrentPlan(data.plan);
+      if (data.success && data.plans && data.plans.length > 0) {
+        setGeneratedPlans(data.plans);
+        setSelectedOptionIndex(0);
         setActiveTab('3d');
       } else {
-        // Fallback to client procedural generator if server response wasn't successful
-        const plan = generateProceduralPlan(params);
-        setCurrentPlan(plan);
+        // Fallback to client procedural generator options
+        const fallbackPlans = generateMultipleProceduralOptions(params);
+        setGeneratedPlans(fallbackPlans);
+        setSelectedOptionIndex(0);
         setActiveTab('3d');
       }
     } catch (err: any) {
       console.warn('Backend API call failed or offline, using robust client procedural generator:', err);
-      // Seamlessly generate accurate procedural plan on client
-      const plan = generateProceduralPlan(params);
-      setCurrentPlan(plan);
+      // Seamlessly generate 3 accurate options on client
+      const fallbackPlans = generateMultipleProceduralOptions(params);
+      setGeneratedPlans(fallbackPlans);
+      setSelectedOptionIndex(0);
       setActiveTab('3d');
     } finally {
       setIsGenerating(false);
@@ -69,7 +86,9 @@ export default function App() {
 
   const handleReset = () => {
     setParams({ ...DEFAULT_HOUSE_PLAN.params });
-    setCurrentPlan(DEFAULT_HOUSE_PLAN);
+    const defaultOptions = generateMultipleProceduralOptions(DEFAULT_HOUSE_PLAN.params);
+    setGeneratedPlans(defaultOptions);
+    setSelectedOptionIndex(0);
     setErrorMsg(null);
   };
 
@@ -114,6 +133,87 @@ export default function App() {
 
           {/* Column 2: Interactive Architectural Studio (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
+            {/* AI Generated Multi-Options Toolbar */}
+            <div className="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur-xl space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+                    <Sparkles className="w-4 h-4 animate-pulse text-amber-300" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>خيارات التوليد المعماري ({generatedPlans.length} نماذج مقترحة)</span>
+                      <span className="bg-cyan-950 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full border border-cyan-500/30">
+                        توزيع ذكي مخصص
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">انقر على الخيار للتبديل بين المخططات والنماذج المعمارية 3D فوراً:</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0"
+                  title="توليد أفكار جديدة بالذكاء الاصطناعي"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin text-amber-400' : ''}`} />
+                  <span className="hidden sm:inline">أفكار جديدة</span>
+                </button>
+              </div>
+
+              {/* Options Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {generatedPlans.map((planOption, idx) => {
+                  const isSelected = selectedOptionIndex === idx;
+                  return (
+                    <button
+                      key={planOption.id || idx}
+                      onClick={() => setSelectedOptionIndex(idx)}
+                      className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between relative overflow-hidden group ${
+                        isSelected
+                          ? 'bg-gradient-to-b from-cyan-950/80 to-slate-900 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] ring-1 ring-cyan-400/50'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900'
+                      }`}
+                    >
+                      {/* Active Checkmark Pill */}
+                      {isSelected && (
+                        <div className="absolute top-2 left-2 bg-cyan-500 text-slate-950 font-black p-0.5 rounded-full shadow-md">
+                          <Check className="w-3 h-3 stroke-[3]" />
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
+                            نموذج 0{idx + 1}
+                          </span>
+                          {planOption.optionBadge && (
+                            <span className="text-[9px] bg-slate-800/90 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20 font-medium truncate max-w-[100px]">
+                              {planOption.optionBadge}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="font-bold text-xs text-white group-hover:text-cyan-200 transition-colors line-clamp-1">
+                          {planOption.optionTitle || `الخيار ${idx + 1}`}
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 line-clamp-2 leading-snug">
+                          {planOption.optionDescription || 'توزيع خاص بمتطلبات البناء المحددة.'}
+                        </p>
+                      </div>
+
+                      <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
+                        <span>غرف: <strong className="text-cyan-300">{planOption.rooms.length}</strong></span>
+                        <span>أعمدة: <strong className="text-emerald-400">{planOption.columns.length}</strong></span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Studio Navigation Tabs */}
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-1.5 flex items-center justify-between gap-1 shadow-2xl backdrop-blur-xl overflow-x-auto">
               <button
@@ -197,3 +297,4 @@ export default function App() {
     </div>
   );
 }
+

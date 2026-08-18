@@ -1,6 +1,6 @@
 import { HouseInputParams, GeneratedHousePlan, RoomData, ColumnData, WallData, OpeningData, FurnitureData } from '../types';
 
-export function generateProceduralPlan(params: HouseInputParams): GeneratedHousePlan {
+export function generateProceduralPlan(params: HouseInputParams, optionVariant: number = 0): GeneratedHousePlan {
   const L = Math.max(8, Math.min(50, Number(params.length) || 15));
   const W = Math.max(6, Math.min(40, Number(params.width) || 10));
   const area = L * W;
@@ -8,10 +8,30 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
   const style = params.style || 'modern';
   const bedroomsCount = Math.max(1, Number(params.bedroomsCount) || 3);
 
+  const optionTitles = [
+    {
+      title: 'الخيار 1: توزيع مفتوح ممتد (فناء وإضاءة بانورامية)',
+      badge: 'أفضل إضاءة وتدفق ✨',
+      desc: 'يركز على ربط الصالة الرئيسية بالحديقة والضوء الطبيعي المباشر'
+    },
+    {
+      title: 'الخيار 2: توزيع ملكي محدد (جناح ضيوف معزول بالكامل)',
+      badge: 'أعلى خصوصية للعائلة 🏛️',
+      desc: 'فصل تام لمدخل ومجلس الضيوف عن فضاءات العائلة وحركة الخدمات'
+    },
+    {
+      title: 'الخيار 3: نمط عصري فندقي (استغلال أقصى للمساحات)',
+      badge: 'أعلى كفاءة واستغلال 🌿',
+      desc: 'تصميم مدمج يقلل الممرات ويعظم مساحة غرف النوم والصالات'
+    }
+  ];
+
+  const optMeta = optionTitles[optionVariant % 3];
+
   const aspect = L / W;
   const spanX = aspect > 1.4 ? 4.2 : 3.8;
   const spanY = 4.0;
-  const columnsX = Math.max(3, Math.ceil(L / spanX) + 1);
+  const columnsX = Math.max(3, Math.ceil(L / spanX) + (optionVariant === 1 ? 2 : 1));
   const columnsY = Math.max(3, Math.ceil(W / spanY) + 1);
   const totalColumns = columnsX * columnsY;
 
@@ -43,77 +63,198 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
   // Rooms
   const rooms: RoomData[] = [];
 
-  // 1. Majlis / Reception
-  const majlisW = Number((L * 0.42).toFixed(1));
-  const majlisL = Number((W * 0.42).toFixed(1));
-  rooms.push({
-    id: 'p-r1',
-    nameAr: params.hasMajlis ? 'مجلس الضيوف الفاخر' : 'صالة الاستقبال الرئيسية',
-    nameEn: 'Main Majlis / Reception',
-    width: majlisW,
-    length: majlisL,
-    area: Number((majlisW * majlisL).toFixed(1)),
-    floor: 0,
-    color: style === 'classic' ? '#d97706' : style === 'andalusian' ? '#ea580c' : '#2563eb',
-    description: 'مساحة استقبال مجهزة بمدخل مستقل وديكور فاخر.',
-    x: 0.5,
-    y: 0.5,
-    category: 'living'
-  });
+  // Vary room positions based on optionVariant
+  if (optionVariant === 1) {
+    // VARIANT 2: Split Guest Wing Right
+    const majlisW = Number((L * 0.45).toFixed(1));
+    const majlisL = Number((W * 0.45).toFixed(1));
+    rooms.push({
+      id: 'p-r1',
+      nameAr: params.hasMajlis ? 'مجلس الضيوف المعزول' : 'صالة الاستقبال الرسمية',
+      nameEn: 'Private Majlis Wing',
+      width: majlisW,
+      length: majlisL,
+      area: Number((majlisW * majlisL).toFixed(1)),
+      floor: 0,
+      color: '#d97706',
+      description: 'جناح مستقل للضيوف بمدخل خارجي مباشر.',
+      x: Number((L - majlisW - 0.5).toFixed(1)),
+      y: 0.5,
+      category: 'living'
+    });
 
-  // 2. Bathroom
-  const bathW = Number(Math.min(2.4, L * 0.18).toFixed(1));
-  const bathL = Number(Math.min(2.2, W * 0.22).toFixed(1));
-  rooms.push({
-    id: 'p-r2',
-    nameAr: 'حمام ومغاسل الضيوف',
-    nameEn: 'Guest Bathroom',
-    width: bathW,
-    length: bathL,
-    area: Number((bathW * bathL).toFixed(1)),
-    floor: 0,
-    color: '#06b6d4',
-    description: 'خدمات صحية فاخرة ومغاسل رخامية للضيوف.',
-    x: Number((majlisW + 0.6).toFixed(1)),
-    y: 0.5,
-    category: 'bathroom'
-  });
+    const bathW = Number(Math.min(2.4, L * 0.18).toFixed(1));
+    const bathL = Number(Math.min(2.2, W * 0.22).toFixed(1));
+    rooms.push({
+      id: 'p-r2',
+      nameAr: 'حمام ومغاسل ضيوف مستقلة',
+      nameEn: 'Guest Bathroom',
+      width: bathW,
+      length: bathL,
+      area: Number((bathW * bathL).toFixed(1)),
+      floor: 0,
+      color: '#06b6d4',
+      description: 'دورة مياه فاخرة تخدم جناح الضيوف.',
+      x: Number((L - majlisW - bathW - 0.8).toFixed(1)),
+      y: 0.5,
+      category: 'bathroom'
+    });
 
-  // 3. Main Family Living Room
-  const livingW = Number((L * 0.48).toFixed(1));
-  const livingL = Number((W * 0.46).toFixed(1));
-  rooms.push({
-    id: 'p-r3',
-    nameAr: 'صالة المعيشة العائلية الكبرى',
-    nameEn: 'Family Living Room',
-    width: livingW,
-    length: livingL,
-    area: Number((livingW * livingL).toFixed(1)),
-    floor: 0,
-    color: '#8b5cf6',
-    description: 'صالة معيشة مفتوحة بإضاءة طبيعية وافرة وإطلالة.',
-    x: 0.5,
-    y: Number((majlisL + 0.6).toFixed(1)),
-    category: 'living'
-  });
+    const livingW = Number((L * 0.5).toFixed(1));
+    const livingL = Number((W * 0.45).toFixed(1));
+    rooms.push({
+      id: 'p-r3',
+      nameAr: 'صالة العائلة الملكية الممتدة',
+      nameEn: 'Private Family Lounge',
+      width: livingW,
+      length: livingL,
+      area: Number((livingW * livingL).toFixed(1)),
+      floor: 0,
+      color: '#8b5cf6',
+      description: 'صالة معيشة عائلية بخصوصية هادئة وإصغاء كامل.',
+      x: 0.5,
+      y: 0.5,
+      category: 'living'
+    });
 
-  // 4. Kitchen
-  const kitchW = Number((L * 0.38).toFixed(1));
-  const kitchL = Number((W * 0.38).toFixed(1));
-  rooms.push({
-    id: 'p-r4',
-    nameAr: 'المطبخ الرئيسي وصالة الطعام',
-    nameEn: 'Main Kitchen & Dining',
-    width: kitchW,
-    length: kitchL,
-    area: Number((kitchW * kitchL).toFixed(1)),
-    floor: 0,
-    color: '#f59e0b',
-    description: 'مطبخ عصري مزود بتهوية مباشرة ومخرج للخدمات.',
-    x: Number((majlisW + 0.6).toFixed(1)),
-    y: Number((bathL + 0.8).toFixed(1)),
-    category: 'kitchen'
-  });
+    const kitchW = Number((L * 0.4).toFixed(1));
+    const kitchL = Number((W * 0.4).toFixed(1));
+    rooms.push({
+      id: 'p-r4',
+      nameAr: 'المطبخ المغلق وطاولة الطعام',
+      nameEn: 'Kitchen & Dining',
+      width: kitchW,
+      length: kitchL,
+      area: Number((kitchW * kitchL).toFixed(1)),
+      floor: 0,
+      color: '#f59e0b',
+      description: 'مطبخ عائلي متكامل بمدخل خدمة جانبي.',
+      x: 0.5,
+      y: Number((livingL + 0.6).toFixed(1)),
+      category: 'kitchen'
+    });
+  } else if (optionVariant === 2) {
+    // VARIANT 3: Hotel Style Compact Central Core
+    const livingW = Number((L * 0.55).toFixed(1));
+    const livingL = Number((W * 0.5).toFixed(1));
+    rooms.push({
+      id: 'p-r3',
+      nameAr: 'صالة المعيشة البانورامية (المفتوحة)',
+      nameEn: 'Open Concept Great Room',
+      width: livingW,
+      length: livingL,
+      area: Number((livingW * livingL).toFixed(1)),
+      floor: 0,
+      color: '#3b82f6',
+      description: 'قلب المنزل العصري بأسلوب الفنادق المفتوحة.',
+      x: Number((L * 0.22).toFixed(1)),
+      y: 0.5,
+      category: 'living'
+    });
+
+    const kitchW = Number((L * 0.35).toFixed(1));
+    const kitchL = Number((W * 0.35).toFixed(1));
+    rooms.push({
+      id: 'p-r4',
+      nameAr: 'المطبخ الأمريكي المفتوح (Open Kitchen)',
+      nameEn: 'Modern Island Kitchen',
+      width: kitchW,
+      length: kitchL,
+      area: Number((kitchW * kitchL).toFixed(1)),
+      floor: 0,
+      color: '#10b981',
+      description: 'جزيرة مطبخ أمريكي فاخرة منفتحة على صالة الطعام.',
+      x: 0.5,
+      y: 0.5,
+      category: 'kitchen'
+    });
+
+    const majlisW = Number((L * 0.38).toFixed(1));
+    const majlisL = Number((W * 0.42).toFixed(1));
+    rooms.push({
+      id: 'p-r1',
+      nameAr: params.hasMajlis ? 'مجلس واستراحة العصرية' : 'صالون المعيشة والموسيقى',
+      nameEn: 'Modern Executive Lounge',
+      width: majlisW,
+      length: majlisL,
+      area: Number((majlisW * majlisL).toFixed(1)),
+      floor: 0,
+      color: '#ec4899',
+      description: 'صالون فاخر مودرن زجاجي.',
+      x: Number((L - majlisW - 0.5).toFixed(1)),
+      y: 0.5,
+      category: 'living'
+    });
+  } else {
+    // VARIANT 1: Standard Courtyard Open Flow
+    const majlisW = Number((L * 0.42).toFixed(1));
+    const majlisL = Number((W * 0.42).toFixed(1));
+    rooms.push({
+      id: 'p-r1',
+      nameAr: params.hasMajlis ? 'مجلس الضيوف الفاخر' : 'صالة الاستقبال الرئيسية',
+      nameEn: 'Main Majlis / Reception',
+      width: majlisW,
+      length: majlisL,
+      area: Number((majlisW * majlisL).toFixed(1)),
+      floor: 0,
+      color: style === 'classic' ? '#d97706' : style === 'andalusian' ? '#ea580c' : '#2563eb',
+      description: 'مساحة استقبال مجهزة بمدخل مستقل وديكور فاخر.',
+      x: 0.5,
+      y: 0.5,
+      category: 'living'
+    });
+
+    const bathW = Number(Math.min(2.4, L * 0.18).toFixed(1));
+    const bathL = Number(Math.min(2.2, W * 0.22).toFixed(1));
+    rooms.push({
+      id: 'p-r2',
+      nameAr: 'حمام ومغاسل الضيوف',
+      nameEn: 'Guest Bathroom',
+      width: bathW,
+      length: bathL,
+      area: Number((bathW * bathL).toFixed(1)),
+      floor: 0,
+      color: '#06b6d4',
+      description: 'خدمات صحية فاخرة ومغاسل رخامية للضيوف.',
+      x: Number((majlisW + 0.6).toFixed(1)),
+      y: 0.5,
+      category: 'bathroom'
+    });
+
+    const livingW = Number((L * 0.48).toFixed(1));
+    const livingL = Number((W * 0.46).toFixed(1));
+    rooms.push({
+      id: 'p-r3',
+      nameAr: 'صالة المعيشة العائلية الكبرى',
+      nameEn: 'Family Living Room',
+      width: livingW,
+      length: livingL,
+      area: Number((livingW * livingL).toFixed(1)),
+      floor: 0,
+      color: '#8b5cf6',
+      description: 'صالة معيشة مفتوحة بإضاءة طبيعية وافرة وإطلالة.',
+      x: 0.5,
+      y: Number((majlisL + 0.6).toFixed(1)),
+      category: 'living'
+    });
+
+    const kitchW = Number((L * 0.38).toFixed(1));
+    const kitchL = Number((W * 0.38).toFixed(1));
+    rooms.push({
+      id: 'p-r4',
+      nameAr: 'المطبخ الرئيسي وصالة الطعام',
+      nameEn: 'Main Kitchen & Dining',
+      width: kitchW,
+      length: kitchL,
+      area: Number((kitchW * kitchL).toFixed(1)),
+      floor: 0,
+      color: '#f59e0b',
+      description: 'مطبخ عصري مزود بتهوية مباشرة ومخرج للخدمات.',
+      x: Number((majlisW + 0.6).toFixed(1)),
+      y: Number((bathL + 0.8).toFixed(1)),
+      category: 'kitchen'
+    });
+  }
 
   // Garage
   if (params.hasGarage) {
@@ -130,7 +271,7 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
       color: '#64748b',
       description: 'كراج أوتوماتيكي مظلل بمدخل للمنزل مباشرة.',
       x: Number((L - garW - 0.5).toFixed(1)),
-      y: 0.5,
+      y: optionVariant === 1 ? Number((W - garL - 0.5).toFixed(1)) : 0.5,
       category: 'garage'
     });
   }
@@ -242,17 +383,31 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
     { id: 'pf2', type: 'table', label: 'طاولة طعام', x: Number((L * 0.4).toFixed(1)), y: Number((W * 0.5).toFixed(1)), width: 2.2, depth: 1.1, rotation: 0, floor: 0 }
   ];
 
-  const costPerM2 = style === 'classic' ? 600 : style === 'modern' ? 500 : 450;
+  const styleNameAr =
+    style === 'andalusian'
+      ? 'فيلا أندلسية إسلامية (مع أقواس وصحن ون نافورة)'
+      : style === 'classic'
+      ? 'فيلا كلاسيكية فخمة (مع أعمدة وجملون)'
+      : style === 'mediterranean'
+      ? 'فيلا متوسطية (بأسقف قرميد إسباني)'
+      : style === 'minimalist'
+      ? 'منزل بسيط (مينيماليست ناصع)'
+      : 'منزل عصري (مودرن زجاجي)';
+
+  const costPerM2 = style === 'classic' || style === 'andalusian' ? 620 : style === 'modern' ? 520 : 470;
   const costMin = Math.round(builtArea * costPerM2 * 0.9);
   const costMax = Math.round(builtArea * costPerM2 * 1.25);
 
   return {
-    id: `plan-gen-${Date.now()}`,
+    id: `plan-gen-${optionVariant}-${Date.now()}`,
     timestamp: new Date().toISOString(),
+    optionTitle: optMeta.title,
+    optionBadge: optMeta.badge,
+    optionDescription: optMeta.desc,
     params,
     specs: {
-      title: `مخطط هندسي ذكي لـ ${style === 'classic' ? 'فيلا كلاسيكية' : 'منزل عصري'} (${L}م × ${W}م - المساحة: ${area}م²)`,
-      summary: `تم توليد هذا المخطط بناءً على أبعاد قطعة الأرض (${L} × ${W} متر) وإجمالي مساحة بناء قدرها ${builtArea.toFixed(0)} م² موزعة على ${floors} طابق.`,
+      title: `${optMeta.title} (${L}م × ${W}م - المساحة: ${area}م²)`,
+      summary: `تم توليد هذا المخطط بواسطة الذكاء الاصطناعي المعماري لـ (${styleNameAr}) بأبعاد (${L} × ${W}m). ${optMeta.desc}.`,
       totalLandArea: area,
       totalBuiltArea: Number(builtArea.toFixed(1)),
       buildingFootprintArea: Number((area * 0.8).toFixed(1)),
@@ -274,23 +429,23 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
     openings,
     furniture,
     materials: {
-      exteriorWallColor: style === 'classic' ? '#fbf8f2' : '#f8fafc',
+      exteriorWallColor: params.facadeWallColor || (style === 'classic' ? '#fef3c7' : '#f8fafc'),
       interiorWallColor: '#f1f5f9',
-      roofColor: '#1e293b',
+      roofColor: style === 'andalusian' ? '#047857' : style === 'mediterranean' || style === 'classic' ? '#9a3412' : '#1e293b',
       windowFrameColor: '#0f172a',
-      floorMaterial: 'سيراميك ورخام فاخر'
+      floorMaterial: style === 'andalusian' ? 'رخام زليج أندلسي وموزاييك' : style === 'classic' ? 'رخام إيطالي فاخر' : 'سيراميك ورخام مودرن'
     },
     facadeImages: [
       {
         id: 'f-gen-1',
-        title: 'الواجهة الرئيسية (منظور نهاري)',
-        description: `تصميم معماري ${style} أنيق يناسب أبعاد الأرض ${L}x${W} متر.`,
+        title: `الواجهة الرئيسية (${styleNameAr})`,
+        description: `تصميم معماري طراز ${styleNameAr} يناسب أبعاد الأرض ${L}x${W} متر مع تفاصيل الخامات المحسوبة.`,
         url: style === 'classic'
           ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
           : style === 'andalusian' || style === 'mediterranean'
           ? 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80'
           : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-        prompt: `Modern exterior facade of a luxury house ${L}x${W} meters`
+        prompt: `Photorealistic ${style} luxury house exterior facade ${L}x${W} meters`
       },
       {
         id: 'f-gen-2',
@@ -310,4 +465,12 @@ export function generateProceduralPlan(params: HouseInputParams): GeneratedHouse
       }
     ]
   };
+}
+
+export function generateMultipleProceduralOptions(params: HouseInputParams): GeneratedHousePlan[] {
+  return [
+    generateProceduralPlan(params, 0),
+    generateProceduralPlan(params, 1),
+    generateProceduralPlan(params, 2)
+  ];
 }

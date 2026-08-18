@@ -50,6 +50,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
   const L = plan.params.length || 15;
   const W = plan.params.width || 10;
   const floorsCount = plan.params.floorsCount || 1;
+  const style = plan.params.style || 'modern';
 
   // Custom Facade Open Directions & Colors
   const openFacadeDirections = plan.params.openFacadeDirections || ['front', 'left'];
@@ -281,13 +282,52 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
       rimMesh.position.set(poolPosX, -0.01, 0);
       houseGroup.add(rimMesh);
 
-      // Outdoor Sun Loungers / Lounge Chairs
-      const chairMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
-      for (let i = 0; i < 2; i++) {
-        const chairGeo = new THREE.BoxGeometry(0.7, 0.25, 1.8);
-        const chairMesh = new THREE.Mesh(chairGeo, chairMat);
-        chairMesh.position.set(poolPosX - poolW / 2 + 0.5 + i * 0.9, 0.12, poolL / 2 + 0.7);
-        houseGroup.add(chairMesh);
+      // Outdoor Sun Loungers / Lounge Chairs or Andalusian Fountain
+      if (style === 'andalusian') {
+        // Octagonal Andalusian Marble Fountain (نافورة صحن أندلسية ثمانية الأضلاع)
+        const fountainX = poolPosX;
+        const fountainZ = poolL / 2 + 1.2;
+
+        const basinGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.35, 8);
+        const basinMat = new THREE.MeshStandardMaterial({ color: 0xfbf8f2, roughness: 0.2 });
+        const basinMesh = new THREE.Mesh(basinGeo, basinMat);
+        basinMesh.position.set(fountainX, 0.18, fountainZ);
+        houseGroup.add(basinMesh);
+
+        // Turquoise Water Surface inside fountain
+        const waterGeo = new THREE.CylinderGeometry(1.0, 1.0, 0.05, 8);
+        const waterMat = new THREE.MeshStandardMaterial({
+          color: 0x06b6d4,
+          roughness: 0.1,
+          metalness: 0.85,
+          transparent: true,
+          opacity: 0.85,
+        });
+        const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+        waterMesh.position.set(fountainX, 0.32, fountainZ);
+        houseGroup.add(waterMesh);
+
+        // Fountain Spout Pedestal Tier
+        const tierGeo = new THREE.CylinderGeometry(0.5, 0.25, 0.45, 8);
+        const tierMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(accentHex), roughness: 0.3 });
+        const tierMesh = new THREE.Mesh(tierGeo, tierMat);
+        tierMesh.position.set(fountainX, 0.55, fountainZ);
+        houseGroup.add(tierMesh);
+
+        // Zellige Mosaic Tiled Surround Floor (بلاط الزليج الأندلسي)
+        const zelligeGeo = new THREE.BoxGeometry(3.6, 0.02, 3.6);
+        const zelligeMat = new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.3 });
+        const zelligeMesh = new THREE.Mesh(zelligeGeo, zelligeMat);
+        zelligeMesh.position.set(fountainX, 0.01, fountainZ);
+        houseGroup.add(zelligeMesh);
+      } else {
+        const chairMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+        for (let i = 0; i < 2; i++) {
+          const chairGeo = new THREE.BoxGeometry(0.7, 0.25, 1.8);
+          const chairMesh = new THREE.Mesh(chairGeo, chairMat);
+          chairMesh.position.set(poolPosX - poolW / 2 + 0.5 + i * 0.9, 0.12, poolL / 2 + 0.7);
+          houseGroup.add(chairMesh);
+        }
       }
 
       // Garden Palm / Cypress Trees (safely positioned inside courtyard)
@@ -480,6 +520,76 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             canopyMesh.position.set(-L * 0.15, floorY + doorH + 0.15, W / 2 + 0.5);
             canopyMesh.castShadow = true;
             houseGroup.add(canopyMesh);
+
+            // Style-Specific Architectural Entrance Accents
+            if (style === 'andalusian') {
+              // 1. Andalusian Islamic Horseshoe Arches Arcade (أروقة بأقواس أندلسية إسلامية)
+              const archSpan = 1.2;
+              const archXs = [-1.5, 0, 1.5];
+              const pillarMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.2 });
+              const archTopMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(accentHex), roughness: 0.3 });
+
+              archXs.forEach((ax) => {
+                const pGeo = new THREE.CylinderGeometry(0.09, 0.11, doorH, 12);
+                const p1 = new THREE.Mesh(pGeo, pillarMat);
+                p1.position.set(ax - archSpan / 2, doorH / 2, W / 2 + 0.95);
+                houseGroup.add(p1);
+
+                const p2 = new THREE.Mesh(pGeo, pillarMat);
+                p2.position.set(ax + archSpan / 2, doorH / 2, W / 2 + 0.95);
+                houseGroup.add(p2);
+
+                const archTorus = new THREE.Mesh(
+                  new THREE.TorusGeometry(archSpan / 2, 0.08, 12, 24, Math.PI),
+                  archTopMat
+                );
+                archTorus.position.set(ax, doorH, W / 2 + 0.95);
+                houseGroup.add(archTorus);
+              });
+
+              // 2. Andalusian Mashrabiya Lattice Panel over front window
+              const mashrabiyaMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(winW * 0.85, winH * 0.85, 0.04),
+                new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.6 })
+              );
+              mashrabiyaMesh.position.set(0, floorY + wallHeight * 0.55, W / 2 + 0.03);
+              houseGroup.add(mashrabiyaMesh);
+            } else if (style === 'classic') {
+              // Classic Corinthian Entrance Columns & Triangular Pediment
+              const colXs = [-1.8, -0.6, 0.6, 1.8];
+              const classicColMat = new THREE.MeshStandardMaterial({ color: 0xfbf8f2, roughness: 0.15 });
+              colXs.forEach((cxPos) => {
+                const colGeo = new THREE.CylinderGeometry(0.14, 0.18, doorH + 0.4, 16);
+                const colMesh = new THREE.Mesh(colGeo, classicColMat);
+                colMesh.position.set(cxPos, (doorH + 0.4) / 2, W / 2 + 1.0);
+                colMesh.castShadow = true;
+                houseGroup.add(colMesh);
+              });
+
+              // Triangular Pediment Gable Top
+              const pedimentShape = new THREE.Shape();
+              pedimentShape.moveTo(-2.2, 0);
+              pedimentShape.lineTo(2.2, 0);
+              pedimentShape.lineTo(0, 1.1);
+              pedimentShape.closePath();
+
+              const pedimentGeo = new THREE.ExtrudeGeometry(pedimentShape, { depth: 0.25, bevelEnabled: false });
+              const pedimentMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.2 });
+              const pedimentMesh = new THREE.Mesh(pedimentGeo, pedimentMat);
+              pedimentMesh.position.set(0, doorH + 0.35, W / 2 + 0.85);
+              houseGroup.add(pedimentMesh);
+            } else if (style === 'mediterranean') {
+              // Mediterranean Pergola Beams
+              const pergolaMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 });
+              for (let b = -2; b <= 2; b++) {
+                const beamMesh = new THREE.Mesh(
+                  new THREE.BoxGeometry(0.12, 0.15, 1.6),
+                  pergolaMat
+                );
+                beamMesh.position.set(b * 0.7, doorH + 0.25, W / 2 + 0.8);
+                houseGroup.add(beamMesh);
+              }
+            }
           }
         } else {
           // Closed Front Wall (Solid Blind Wall)
@@ -679,16 +789,51 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     if (showRoof && selectedFloor3D === 'all') {
       const topY = wallHeight * floorsCount;
 
-      if (plan.params.style === 'classic' || plan.params.style === 'mediterranean') {
+      if (style === 'andalusian') {
+        // Andalusian Emerald Green / Terracotta Sloped Roof
+        const roofGeo = new THREE.ConeGeometry(Math.max(L, W) * 0.75, 2.6, 4);
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.3 }); // Emerald Green
+        const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+        roofMesh.position.set(0, topY + 1.3, 0);
+        roofMesh.rotation.y = Math.PI / 4;
+        roofMesh.castShadow = true;
+        houseGroup.add(roofMesh);
+
+        // Islamic Central Dome (Qubba - قبة إسلامية)
+        const domeGeo = new THREE.SphereGeometry(1.6, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+        const domeMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.2 });
+        const domeMesh = new THREE.Mesh(domeGeo, domeMat);
+        domeMesh.position.set(0, topY + 1.35, 0);
+        domeMesh.castShadow = true;
+        houseGroup.add(domeMesh);
+
+        // Gold Crescent Finial on top of Dome (هلال القبة الذهبي)
+        const finialGeo = new THREE.CylinderGeometry(0.04, 0.08, 0.9, 8);
+        const finialMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.9, roughness: 0.1 });
+        const finialMesh = new THREE.Mesh(finialGeo, finialMat);
+        finialMesh.position.set(0, topY + 3.0, 0);
+        houseGroup.add(finialMesh);
+      } else if (style === 'classic') {
+        // Classic Burgundy Slate Red Gable Roof
         const roofGeo = new THREE.ConeGeometry(Math.max(L, W) * 0.78, 2.8, 4);
-        const roofMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.4 });
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x881337, roughness: 0.35 });
         const roofMesh = new THREE.Mesh(roofGeo, roofMat);
         roofMesh.position.set(0, topY + 1.4, 0);
         roofMesh.rotation.y = Math.PI / 4;
         roofMesh.castShadow = true;
         houseGroup.add(roofMesh);
+      } else if (style === 'mediterranean') {
+        // Mediterranean Spanish Red Terracotta Curved Roof
+        const roofGeo = new THREE.ConeGeometry(Math.max(L, W) * 0.76, 2.5, 4);
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.5 });
+        const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+        roofMesh.position.set(0, topY + 1.25, 0);
+        roofMesh.rotation.y = Math.PI / 4;
+        roofMesh.castShadow = true;
+        houseGroup.add(roofMesh);
       } else {
-        const roofGeo = new THREE.BoxGeometry(L + 0.4, 0.28, W + 0.4);
+        // Modern / Minimalist Flat Parapet Roof with Floating Overhang
+        const roofGeo = new THREE.BoxGeometry(L + 0.5, 0.28, W + 0.5);
         const roofMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
         const roofMesh = new THREE.Mesh(roofGeo, roofMat);
         roofMesh.position.set(0, topY + 0.14, 0);
