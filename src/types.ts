@@ -1,11 +1,23 @@
-export type ArchitecturalStyle = 'modern' | 'classic' | 'andalusian' | 'mediterranean' | 'minimalist';
+export type ArchitecturalStyle =
+  | 'modern'
+  | 'classic'
+  | 'andalusian'
+  | 'mediterranean'
+  | 'minimalist'
+  | 'traditional'
+  | 'algerian'
+  | 'luxury'
+  | 'economic';
+
+export type RoofType = 'flat' | 'sloped';
 
 export type Currency = 'SAR' | 'USD' | 'DZD' | 'AED' | 'EGP';
 
 export interface HouseInputParams {
   length: number; // in meters (الطول)
   width: number; // in meters (العرض)
-  floorsCount: number; // 1, 2, 3 (عدد الطوابق)
+  targetBuiltArea?: number; // in m² مساحة البناء المطلوبة
+  floorsCount: number; // 1, 2, 3, 4 (عدد الطوابق)
   bedroomsCount: number; // غرف النوم
   bathroomsCount: number; // الحمامات
   livingRoomsCount: number; // غرف المعيشة / الصالون
@@ -15,6 +27,10 @@ export interface HouseInputParams {
   garageCapacity: number; // عدد السيارات (1 or 2)
   hasGarden: boolean; // حديقة / حوش
   hasBalcony: boolean; // شرفة / تراس
+  hasStairs: boolean; // درج / سلم داخلي
+  hasCourtyard: boolean; // فناء داخلي / وسط الدار
+  roofType: RoofType; // نوع السقف: مسطح أو مائل
+  wallMaterial?: string; // مواد البناء والواجهة
   facadesCount: number; // عدد الواجهات المفتوحة (1 to 4)
   openFacadeDirections?: ('front' | 'back' | 'right' | 'left')[]; // الواجهات المفتوحة المحددة
   facadeWallColor?: string; // لون جدران الواجهة
@@ -124,6 +140,9 @@ export interface AIOptionPlan {
 export interface GeneratedHousePlan {
   id: string;
   timestamp: string;
+  source?: 'gemini' | 'procedural';
+  aiModel?: string;
+  generationNotes?: string;
   optionTitle?: string;
   optionBadge?: string;
   optionDescription?: string;

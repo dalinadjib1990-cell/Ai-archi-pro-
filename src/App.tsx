@@ -10,7 +10,10 @@ import {
   AlertCircle,
   LayoutGrid,
   Check,
-  RotateCw
+  RotateCw,
+  Sliders,
+  Shuffle,
+  Wand2
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { InputForm } from './components/InputForm';
@@ -19,9 +22,10 @@ import { House3DViewer } from './components/House3DViewer';
 import { StructuralReport } from './components/StructuralReport';
 import { FacadeGallery } from './components/FacadeGallery';
 import { PrintReportModal } from './components/PrintReportModal';
+import { RoomEditor } from './components/RoomEditor';
 import { HouseInputParams, GeneratedHousePlan, Currency } from './types';
 import { DEFAULT_HOUSE_PLAN } from './data/presetTemplates';
-import { generateMultipleProceduralOptions } from './utils/proceduralGenerator';
+import { generateMultipleProceduralOptions, generateProceduralPlan } from './utils/proceduralGenerator';
 
 export default function App() {
   const [params, setParams] = useState<HouseInputParams>({ ...DEFAULT_HOUSE_PLAN.params });
@@ -31,22 +35,41 @@ export default function App() {
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(0);
   const [currency, setCurrency] = useState<Currency>('SAR');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'2d' | '3d' | 'specs' | 'facades'>('3d');
+  const [activeTab, setActiveTab] = useState<'2d' | '3d' | 'editor' | 'specs' | 'facades'>('3d');
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [aiSuccessBadge, setAiSuccessBadge] = useState<string | null>(null);
+  const [alternativeVariantCounter, setAlternativeVariantCounter] = useState<number>(1);
 
   const currentPlan = generatedPlans[selectedOptionIndex] || generatedPlans[0] || DEFAULT_HOUSE_PLAN;
 
-  // Sync procedural options whenever inputs/params change (so live changes update instant 3 options)
-  React.useEffect(() => {
-    const liveOptions = generateMultipleProceduralOptions(params);
-    setGeneratedPlans(liveOptions);
-  }, [params]);
+  // Check if current user inputs differ from the active plan's parameters
+  const hasUnappliedInputChanges = React.useMemo(() => {
+    if (!currentPlan?.params) return false;
+    return (
+      params.length !== currentPlan.params.length ||
+      params.width !== currentPlan.params.width ||
+      params.bedroomsCount !== currentPlan.params.bedroomsCount ||
+      params.bathroomsCount !== currentPlan.params.bathroomsCount ||
+      params.floorsCount !== currentPlan.params.floorsCount ||
+      params.hasMajlis !== currentPlan.params.hasMajlis ||
+      params.hasGarage !== currentPlan.params.hasGarage ||
+      params.hasGarden !== currentPlan.params.hasGarden ||
+      params.hasBalcony !== currentPlan.params.hasBalcony ||
+      params.hasStairs !== currentPlan.params.hasStairs ||
+      params.hasCourtyard !== currentPlan.params.hasCourtyard ||
+      params.roofType !== currentPlan.params.roofType ||
+      params.targetBuiltArea !== currentPlan.params.targetBuiltArea ||
+      params.style !== currentPlan.params.style ||
+      params.customNotes !== currentPlan.params.customNotes
+    );
+  }, [params, currentPlan]);
 
   // Handle AI House Generation
   const handleGenerate = async () => {
     setIsGenerating(true);
     setErrorMsg(null);
+    setAiSuccessBadge(null);
 
     try {
       const response = await fetch('/api/generate-plan', {
@@ -65,23 +88,54 @@ export default function App() {
         setGeneratedPlans(data.plans);
         setSelectedOptionIndex(0);
         setActiveTab('3d');
+        if (data.source === 'gemini') {
+          setAiSuccessBadge(`تم التوليد بنجاح عبر الذكاء الاصطناعي الفعلي Gemini (${data.modelUsed || 'Gemini Flash'})`);
+        } else {
+          setAiSuccessBadge('تم إنشاء 3 نماذج معمارية مخصصة لمدخلاتك بدقة');
+        }
       } else {
         // Fallback to client procedural generator options
         const fallbackPlans = generateMultipleProceduralOptions(params);
         setGeneratedPlans(fallbackPlans);
         setSelectedOptionIndex(0);
         setActiveTab('3d');
+        setAiSuccessBadge('تم إنشاء 3 نماذج معمارية مخصصة لمدخلاتك بدقة');
       }
     } catch (err: any) {
-      console.warn('Backend API call failed or offline, using robust client procedural generator:', err);
-      // Seamlessly generate 3 accurate options on client
+      console.warn('Backend API call fallback to client procedural generator:', err);
       const fallbackPlans = generateMultipleProceduralOptions(params);
       setGeneratedPlans(fallbackPlans);
       setSelectedOptionIndex(0);
       setActiveTab('3d');
+      setAiSuccessBadge('تم إنشاء 3 نماذج معمارية مخصصة لمدخلاتك بدقة');
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // Generate Alternative Architecture Layout (توليد تصميم آخر)
+  const handleGenerateAlternative = () => {
+    const nextVariant = (alternativeVariantCounter + 1) % 5;
+    setAlternativeVariantCounter(nextVariant);
+    const newAlternativePlan = generateProceduralPlan(params, nextVariant);
+    
+    setGeneratedPlans((prev) => {
+      const copy = [...prev];
+      copy[selectedOptionIndex] = newAlternativePlan;
+      return copy;
+    });
+
+    setAiSuccessBadge(`تم إنشاء توزيع معماري بديل: ${newAlternativePlan.optionTitle}`);
+  };
+
+  // Update plan with modified rooms from RoomEditor
+  const handleUpdatePlan = (updatedPlan: GeneratedHousePlan) => {
+    setGeneratedPlans((prev) => {
+      const copy = [...prev];
+      copy[selectedOptionIndex] = updatedPlan;
+      return copy;
+    });
+    setAiSuccessBadge('تم تطبيق تعديلات الغرف وحفظها في النموذج 3D والمخطط!');
   };
 
   const handleReset = () => {
@@ -90,6 +144,7 @@ export default function App() {
     setGeneratedPlans(defaultOptions);
     setSelectedOptionIndex(0);
     setErrorMsg(null);
+    setAiSuccessBadge(null);
   };
 
   return (
@@ -133,6 +188,54 @@ export default function App() {
 
           {/* Column 2: Interactive Architectural Studio (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
+            {/* Real AI Generation Status Banner */}
+            {aiSuccessBadge && (
+              <div className="bg-gradient-to-r from-cyan-950/90 via-slate-900/90 to-blue-950/90 border border-cyan-500/50 rounded-2xl p-3 text-xs text-cyan-200 flex items-center justify-between gap-3 shadow-xl backdrop-blur-xl">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-cyan-300 animate-pulse" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-white block">{aiSuccessBadge}</span>
+                    <span className="text-[11px] text-cyan-300/80">
+                      أبعاد: {currentPlan.params.length}×{currentPlan.params.width}م | {currentPlan.params.bedroomsCount} غرف نوم | {currentPlan.params.floorsCount} طوابق | الطراز: {currentPlan.params.style}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAiSuccessBadge(null)}
+                  className="text-slate-400 hover:text-white px-2 py-1 hover:bg-slate-800 rounded-lg transition-colors text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Unapplied Changes Prompt Banner */}
+            {hasUnappliedInputChanges && (
+              <div className="bg-gradient-to-r from-amber-950/80 via-slate-900/90 to-amber-950/80 border border-amber-500/50 rounded-2xl p-3 text-xs text-amber-200 flex items-center justify-between gap-3 shadow-xl backdrop-blur-xl">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-white block">تم تعديل المدخلات في اللوحة الجانبية</span>
+                    <span className="text-[11px] text-amber-300/90">
+                      اضغط لتوليد 3 نماذج ذكاء اصطناعي جديدة متطابقة مع أبعادك ومتطلباتك الجديدة.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="px-3 py-1.5 bg-gradient-to-l from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl font-bold text-xs shadow-lg transition-all shrink-0 active:scale-95 flex items-center gap-1.5"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+                  <span>{isGenerating ? 'جاري التوليد...' : 'تحديث النماذج الآن'}</span>
+                </button>
+              </div>
+            )}
+
             {/* AI Generated Multi-Options Toolbar */}
             <div className="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur-xl space-y-3">
               <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
@@ -144,22 +247,34 @@ export default function App() {
                     <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                       <span>خيارات التوليد المعماري ({generatedPlans.length} نماذج مقترحة)</span>
                       <span className="bg-cyan-950 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full border border-cyan-500/30">
-                        توزيع ذكي مخصص
+                        {currentPlan.source === 'gemini' ? 'Gemini AI مُولّد' : 'توزيع هندسي ذكي'}
                       </span>
                     </h3>
                     <p className="text-[11px] text-slate-400">انقر على الخيار للتبديل بين المخططات والنماذج المعمارية 3D فوراً:</p>
                   </div>
                 </div>
 
-                <button
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0"
-                  title="توليد أفكار جديدة بالذكاء الاصطناعي"
-                >
-                  <RotateCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin text-amber-400' : ''}`} />
-                  <span className="hidden sm:inline">أفكار جديدة</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleGenerateAlternative}
+                    disabled={isGenerating}
+                    className="px-2.5 py-1.5 bg-gradient-to-l from-indigo-900 to-purple-950 hover:from-indigo-800 hover:to-purple-900 border border-purple-500/50 text-purple-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 hover:shadow-[0_0_15px_rgba(168,85,247,0.3)] active:scale-95"
+                    title="إنشاء توزيع معماري بديل ومختلف تماماً"
+                  >
+                    <Shuffle className="w-3.5 h-3.5 text-purple-300" />
+                    <span>توليد تصميم آخر</span>
+                  </button>
+
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="px-2.5 py-1.5 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/40 text-cyan-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] active:scale-95"
+                    title="توليد أفكار ونماذج جديدة بالذكاء الاصطناعي"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin text-amber-400' : 'text-cyan-400'}`} />
+                    <span>{isGenerating ? 'جاري التوليد...' : 'توليد أفكار جديدة'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Options Grid */}
@@ -185,8 +300,11 @@ export default function App() {
 
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
-                            نموذج 0{idx + 1}
+                          <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                            <span>نموذج 0{idx + 1}</span>
+                            {planOption.source === 'gemini' && (
+                              <span className="text-[9px] bg-blue-950 text-blue-300 px-1 rounded border border-blue-500/30">AI</span>
+                            )}
                           </span>
                           {planOption.optionBadge && (
                             <span className="text-[9px] bg-slate-800/90 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20 font-medium truncate max-w-[100px]">
@@ -241,6 +359,18 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => setActiveTab('editor')}
+                className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'editor'
+                    ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] border border-cyan-400/30'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <Sliders className="w-4 h-4 text-cyan-200" />
+                <span>محرر الغرف</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('specs')}
                 className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'specs'
@@ -268,6 +398,16 @@ export default function App() {
             {/* Tab Views Content */}
             {activeTab === '3d' && <House3DViewer plan={currentPlan} />}
             {activeTab === '2d' && <Blueprint2DCanvas plan={currentPlan} />}
+            {activeTab === 'editor' && (
+              <RoomEditor
+                plan={currentPlan}
+                onUpdatePlan={handleUpdatePlan}
+                onResetLayout={() => {
+                  const fresh = generateProceduralPlan(params, selectedOptionIndex);
+                  handleUpdatePlan(fresh);
+                }}
+              />
+            )}
             {activeTab === 'specs' && <StructuralReport plan={currentPlan} currency={currency} />}
             {activeTab === 'facades' && <FacadeGallery plan={currentPlan} />}
           </div>
