@@ -7,11 +7,104 @@ export type ArchitecturalStyle =
   | 'traditional'
   | 'algerian'
   | 'luxury'
-  | 'economic';
+  | 'economic'
+  | 'industrial';
 
 export type RoofType = 'flat' | 'sloped';
 
-export type Currency = 'SAR' | 'USD' | 'DZD' | 'AED' | 'EGP';
+export type Currency = 'DZD' | 'SAR' | 'USD' | 'AED' | 'EGP';
+
+export type AppLanguage = 'ar' | 'fr' | 'en';
+
+export type MeasurementUnit = 'm' | 'cm';
+
+export type WorkspaceViewMode = '3d' | '2d' | 'split';
+
+export type EditorTool =
+  | 'select'
+  | 'move'
+  | 'wall'
+  | 'room'
+  | 'door'
+  | 'window'
+  | 'furniture'
+  | 'measure'
+  | 'delete';
+
+export type CameraPresetMode =
+  | 'iso'
+  | 'top'
+  | 'front'
+  | 'back'
+  | 'left'
+  | 'right'
+  | 'walk';
+
+export type LayerKey =
+  | 'land'
+  | 'foundations'
+  | 'walls'
+  | 'columns'
+  | 'beams'
+  | 'slabs'
+  | 'roof'
+  | 'doors'
+  | 'windows'
+  | 'furniture'
+  | 'lighting'
+  | 'plants'
+  | 'site';
+
+export type LayerVisibilityMap = Record<LayerKey, boolean>;
+
+export const DEFAULT_LAYERS: LayerVisibilityMap = {
+  land: true,
+  foundations: true,
+  walls: true,
+  columns: true,
+  beams: true,
+  slabs: true,
+  roof: true,
+  doors: true,
+  windows: true,
+  furniture: true,
+  lighting: true,
+  plants: true,
+  site: true,
+};
+
+export type WallType = 'exterior' | 'interior' | 'structural';
+
+export type FurnitureCatalogType =
+  | 'bed'
+  | 'wardrobe'
+  | 'desk'
+  | 'sofa'
+  | 'table'
+  | 'chair'
+  | 'tv'
+  | 'kitchen_counter'
+  | 'fridge'
+  | 'washer'
+  | 'sink'
+  | 'toilet'
+  | 'shower'
+  | 'lamp'
+  | 'plant'
+  | 'decor'
+  | 'car';
+
+export interface SiteSettings {
+  buildingOffsetX: number; // meters from left lot boundary
+  buildingOffsetY: number; // meters from back lot boundary
+  hasFence: boolean;
+  hasGate: boolean;
+  hasDriveway: boolean;
+  hasParking: boolean;
+  hasPool: boolean;
+  hasPatio: boolean;
+  hasGardenLights: boolean;
+}
 
 export interface HouseInputParams {
   length: number; // in meters (الطول)
@@ -24,7 +117,7 @@ export interface HouseInputParams {
   kitchensCount: number; // المطابخ
   hasMajlis: boolean; // مجلس ضيوف
   hasGarage: boolean; // مرآب سيارات
-  garageCapacity: number; // عدد السيارات (1 or 2)
+  garageCapacity: number; // عدد السيارات (0, 1 or 2)
   hasGarden: boolean; // حديقة / حوش
   hasBalcony: boolean; // شرفة / تراس
   hasStairs: boolean; // درج / سلم داخلي
@@ -41,6 +134,9 @@ export interface HouseInputParams {
   showGardenDecor?: boolean; // إظهار تزيين الحديقة والمسبح
   style: ArchitecturalStyle; // الطراز المعماري
   customNotes: string; // ملاحظات وإرشادات خاصة
+  naturalLanguagePrompt?: string; // وصف حر باللغة الطبيعية لتوليد المخطط
+  lotShape?: 'rectangle' | 'square' | 'corner' | 'l-shape';
+  siteSettings?: SiteSettings;
 }
 
 export interface RoomData {
@@ -55,7 +151,15 @@ export interface RoomData {
   description: string;
   x: number; // meter offset from top-left (0 to house length)
   y: number; // meter offset from top-left (0 to house width)
-  category: 'living' | 'bedroom' | 'bathroom' | 'kitchen' | 'garage' | 'hall' | 'outdoor' | 'balcony';
+  category:
+    | 'living'
+    | 'bedroom'
+    | 'bathroom'
+    | 'kitchen'
+    | 'garage'
+    | 'hall'
+    | 'outdoor'
+    | 'balcony';
 }
 
 export interface WallData {
@@ -67,16 +171,40 @@ export interface WallData {
   thickness: number; // in meters (e.g. 0.25 for exterior, 0.15 for interior)
   isExterior: boolean;
   floor: number;
+  height?: number; // wall height in meters (default 3.2)
+  wallType?: WallType;
+  label?: string;
 }
 
 export interface ColumnData {
   id: string;
   x: number; // meters from top-left
   y: number; // meters from top-left
-  sizeX: number; // meters e.g. 0.2 x 0.5
+  sizeX: number; // meters e.g. 0.25 x 0.45
   sizeY: number;
   gridAxis: string; // e.g. "A-1", "B-2"
   floorSpan: string; // e.g. "الأرضي إلى السقف"
+}
+
+export interface BeamData {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  depth: number;
+  floor: number;
+}
+
+export interface FoundationData {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  depth: number;
+  columnId: string;
 }
 
 export interface OpeningData {
@@ -88,6 +216,7 @@ export interface OpeningData {
   rotation: number; // 0, 90, 180, 270 degrees
   label: string;
   floor: number;
+  height?: number;
 }
 
 export interface FurnitureData {
@@ -100,6 +229,10 @@ export interface FurnitureData {
   depth: number;
   rotation: number;
   floor: number;
+  color?: string;
+  scale?: number;
+  height?: number;
+  roomId?: string;
 }
 
 export interface ArchitecturalSpecs {
@@ -131,9 +264,9 @@ export interface FacadeImageData {
 
 export interface AIOptionPlan {
   optionId: string;
-  optionTitle: string; // e.g. "الخيار الأول: توزيع مفتوح مع فناء"
-  optionBadge: string; // e.g. "أعلى استغلال للمساحة ✨"
-  optionDescription: string; // e.g. "تصميم يركز على الفضاءات المفتوحة مع ربط الصالة بالحديقة والإضاءة المباشرة."
+  optionTitle: string;
+  optionBadge: string;
+  optionDescription: string;
   plan: GeneratedHousePlan;
 }
 
@@ -151,6 +284,8 @@ export interface GeneratedHousePlan {
   rooms: RoomData[];
   walls: WallData[];
   columns: ColumnData[];
+  beams?: BeamData[];
+  foundations?: FoundationData[];
   openings: OpeningData[];
   furniture: FurnitureData[];
   materials: {
@@ -161,4 +296,77 @@ export interface GeneratedHousePlan {
     floorMaterial: string;
   };
   facadeImages: FacadeImageData[];
+}
+
+export type SelectedEntity =
+  | { kind: 'room'; id: string }
+  | { kind: 'wall'; id: string }
+  | { kind: 'furniture'; id: string }
+  | { kind: 'opening'; id: string }
+  | { kind: 'column'; id: string }
+  | null;
+
+export interface CostStageConfig {
+  id: string;
+  nameAr: string;
+  nameFr: string;
+  nameEn: string;
+  unitAr: string;
+  unitFr: string;
+  unitEn: string;
+  quantity: number;
+  materialUnitRateDZD: number;
+  laborUnitRateDZD: number;
+}
+
+export interface DesignIssue {
+  id: string;
+  severity: 'error' | 'warning' | 'info';
+  titleAr: string;
+  titleFr: string;
+  titleEn: string;
+  detailAr: string;
+  detailFr: string;
+  detailEn: string;
+  suggestionAr: string;
+  suggestionFr: string;
+  suggestionEn: string;
+  floor?: number;
+  targetId?: string;
+}
+
+export interface AIAssistantCommandEntry {
+  id: string;
+  timestamp: string;
+  command: string;
+  explanation: string;
+  applied: boolean;
+  source: 'gemini' | 'local';
+}
+
+export interface ArchProjectRecord {
+  id: string;
+  info: {
+    name: string;
+    createdAt: string;
+    updatedAt: string;
+    version: string;
+    author: string;
+  };
+  site: SiteSettings;
+  plan: GeneratedHousePlan;
+  layers: LayerVisibilityMap;
+  costRatesDZD: Record<string, { material: number; labor: number }>;
+  camera: {
+    preset: CameraPresetMode;
+    explodedAmount: number;
+    selectedFloor3D: number | 'all';
+    viewMode: 'realistic' | 'structural' | 'night';
+  };
+  settings: {
+    language: AppLanguage;
+    currency: Currency;
+    unit: MeasurementUnit;
+  };
+  assistantLog: AIAssistantCommandEntry[];
 }

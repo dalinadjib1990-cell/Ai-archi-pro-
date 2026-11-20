@@ -1,21 +1,75 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Image, Maximize2, RefreshCw, Wand2, Download } from 'lucide-react';
-import { GeneratedHousePlan, FacadeImageData } from '../types';
+import { Image, Maximize2, Wand2, Download, Compass, Palette } from 'lucide-react';
+import {
+  AppLanguage,
+  ArchitecturalStyle,
+  FacadeImageData,
+  GeneratedHousePlan,
+} from '../types';
+import { pickText } from '../utils/i18n';
 
 interface FacadeGalleryProps {
   plan: GeneratedHousePlan;
+  onUpdatePlan?: (updated: GeneratedHousePlan) => void;
+  language?: AppLanguage;
 }
 
-export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
+const ELEVATION_VIEWS = [
+  { id: 'front' as const, ar: 'الواجهة الأمامية (Front)', fr: 'Façade Avant', en: 'Front Elevation' },
+  { id: 'back' as const, ar: 'الواجهة الخلفية (Back)', fr: 'Façade Arrière', en: 'Rear Elevation' },
+  { id: 'left' as const, ar: 'الواجهة اليسرى (Left)', fr: 'Façade Gauche', en: 'Left Elevation' },
+  { id: 'right' as const, ar: 'الواجهة اليمنى (Right)', fr: 'Façade Droite', en: 'Right Elevation' },
+];
+
+const FACADE_STYLE_PRESETS: Array<{
+  id: ArchitecturalStyle;
+  ar: string;
+  fr: string;
+  en: string;
+  wallColor: string;
+  accentColor: string;
+}> = [
+  { id: 'modern', ar: 'عصري', fr: 'Moderne', en: 'Modern', wallColor: '#f8fafc', accentColor: '#0f172a' },
+  { id: 'minimalist', ar: 'مينيمال', fr: 'Minimaliste', en: 'Minimalist', wallColor: '#e2e8f0', accentColor: '#334155' },
+  { id: 'classic', ar: 'كلاسيك', fr: 'Classique', en: 'Classic', wallColor: '#fef3c7', accentColor: '#78350f' },
+  { id: 'mediterranean', ar: 'متوسطي', fr: 'Méditerranéen', en: 'Mediterranean', wallColor: '#fffbeb', accentColor: '#b45309' },
+  { id: 'algerian', ar: 'جزائري حديث', fr: 'Algérien Moderne', en: 'Algerian Modern', wallColor: '#f8fafc', accentColor: '#92400e' },
+  { id: 'luxury', ar: 'فيلا فاخرة', fr: 'Villa Luxe', en: 'Luxury Villa', wallColor: '#f1f5f9', accentColor: '#1e293b' },
+  { id: 'industrial', ar: 'صناعي', fr: 'Industriel', en: 'Industrial', wallColor: '#475569', accentColor: '#18181b' },
+];
+
+export const FacadeGallery: React.FC<FacadeGalleryProps> = ({
+  plan,
+  onUpdatePlan,
+  language = 'ar',
+}) => {
   const [images, setImages] = useState<FacadeImageData[]>(plan.facadeImages || []);
   const [selectedImage, setSelectedImage] = useState<FacadeImageData | null>(null);
   const [isGeneratingImg, setIsGeneratingImg] = useState<boolean>(false);
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [genError, setGenError] = useState<string | null>(null);
+  const [activeElevation, setActiveElevation] = useState<'front' | 'back' | 'left' | 'right'>('front');
 
   useEffect(() => {
     setImages(plan.facadeImages || []);
   }, [plan]);
+
+  const applyFacadeStyle = (st: typeof FACADE_STYLE_PRESETS[number]) => {
+    if (!onUpdatePlan) return;
+    onUpdatePlan({
+      ...plan,
+      params: {
+        ...plan.params,
+        style: st.id,
+        facadeWallColor: st.wallColor,
+        accentColor: st.accentColor,
+      },
+      materials: {
+        ...plan.materials,
+        exteriorWallColor: st.wallColor,
+      },
+    });
+  };
 
   const handleGenerateNewFacade = async () => {
     setIsGeneratingImg(true);
@@ -34,8 +88,8 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
       if (data.success && data.imageUrl) {
         const newImg: FacadeImageData = {
           id: `facade-ai-${Date.now()}`,
-          title: customPrompt ? 'واجهة مخصصة جديدة' : 'واجهة معمارية جديدة 3D',
-          description: `تصميم معالج بالذكاء الاصطناعي لطراز ${plan.params.style}`,
+          title: customPrompt ? pickText(language, 'واجهة مخصصة', 'Façade personnalisée', 'Custom Facade') : `${plan.params.style.toUpperCase()} 3D Render`,
+          description: `${plan.params.length}×${plan.params.width}m • ${plan.params.floorsCount}F • ${plan.params.style}`,
           url: data.imageUrl,
           prompt,
         };
@@ -52,8 +106,37 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
     }
   };
 
+  // Parametric SVG Architectural Elevation synced to live building dimensions & openings
+  const L = plan.params.length || 15;
+  const W = plan.params.width || 10;
+  const floors = Math.max(1, plan.params.floorsCount || 1);
+  const elevSpanM = activeElevation === 'front' || activeElevation === 'back' ? L : W;
+  const wallH = 3.2;
+  const totalH = floors * wallH + (plan.params.roofType === 'sloped' ? 1.8 : 0.75);
+  const openDirs = plan.params.openFacadeDirections || ['front', 'left'];
+  const isOpenSide = openDirs.includes(activeElevation);
+  const wallHex = plan.params.facadeWallColor || plan.materials.exteriorWallColor || '#f8fafc';
+  const accentHex = plan.params.accentColor || '#92400e';
+
+  const svgW = 720;
+  const svgH = 300;
+  const scale = Math.min((svgW - 120) / elevSpanM, (svgH - 70) / totalH);
+  const bPxW = elevSpanM * scale;
+  const bPxX = (svgW - bPxW) / 2;
+  const groundY = svgH - 36;
+  const bodyH = floors * wallH * scale;
+  const bodyTopY = groundY - bodyH;
+
+  // Map openings on this elevation side
+  const sideOpenings = plan.openings.filter((op) => {
+    if (activeElevation === 'front') return op.y > W * 0.78 && (op.rotation === 0 || op.rotation === 180);
+    if (activeElevation === 'back') return op.y < W * 0.22 && (op.rotation === 0 || op.rotation === 180);
+    if (activeElevation === 'left') return op.x < L * 0.22 && (op.rotation === 90 || op.rotation === 270);
+    return op.x > L * 0.78 && (op.rotation === 90 || op.rotation === 270);
+  });
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl text-slate-100 space-y-5">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl text-slate-100 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-3">
@@ -61,9 +144,175 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
             <Image className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">صور الواجهات المعمارية (AI Renderings)</h3>
-            <p className="text-xs text-slate-400">صور ثلاثية الأبعاد وواقعية للواجهات الخارجية والنهارية والليلية</p>
+            <h3 className="text-base font-bold text-white">
+              {pickText(language, 'استوديو الواجهات والرفع المعماري (Facade Generator)', 'Générateur de Façades & Élévations', 'Facade Generator & Elevation Studio')}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {pickText(language, 'مساقط واجهات هندسية حية مرتبطة بأبعادك + توليد تصاميم واقعية بالذكاء الاصطناعي', 'Élévations paramétriques + rendus IA', 'Dimension-synced architectural elevations + AI photorealistic renders')}
+            </p>
           </div>
+        </div>
+      </div>
+
+      {/* Live Facade Style & Material Switcher */}
+      {onUpdatePlan && (
+        <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+            <Palette className="w-4 h-4" />
+            <span>{pickText(language, 'تبديل نمط الواجهة فوراً (ينعكس على 3D والرفع الهندسي)', 'Style de Façade instantané', 'Instant Facade Style Switcher')}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {FACADE_STYLE_PRESETS.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => applyFacadeStyle(st)}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  plan.params.style === st.id
+                    ? 'bg-cyan-600 border-cyan-400 text-white'
+                    : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full border border-white/30" style={{ backgroundColor: st.wallColor }} />
+                <span>{pickText(language, st.ar, st.fr, st.en)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Parametric Elevation CAD Preview (Front / Back / Left / Right) */}
+      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-white">
+            <Compass className="w-4 h-4 text-cyan-400" />
+            <span>{pickText(language, 'الرفع المعماري الهندسي للواجهات (2D Elevations)', 'Élévations Architecturales', 'Parametric 2D Architectural Elevations')}</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {ELEVATION_VIEWS.map((ev) => (
+              <button
+                key={ev.id}
+                type="button"
+                onClick={() => setActiveElevation(ev.id)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                  activeElevation === ev.id
+                    ? 'bg-cyan-600 border-cyan-400 text-white'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {pickText(language, ev.ar, ev.fr, ev.en)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl overflow-hidden border border-slate-800 bg-[#020617]">
+          <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto block">
+            <rect width="100%" height="100%" fill="#020617" />
+            {/* Ground line */}
+            <line x1="30" y1={groundY} x2={svgW - 30} y2={groundY} stroke="#10b981" strokeWidth="2" />
+            {/* Main facade mass */}
+            <rect
+              x={bPxX}
+              y={bodyTopY}
+              width={bPxW}
+              height={bodyH}
+              fill={wallHex}
+              stroke="#38bdf8"
+              strokeWidth="1.5"
+            />
+            {/* Floor slab lines & Balcony ledges */}
+            {Array.from({ length: floors }).map((_, f) => {
+              const fy = groundY - (f + 1) * wallH * scale;
+              return (
+                <g key={f}>
+                  <line x1={bPxX - 4} y1={fy} x2={bPxX + bPxW + 4} y2={fy} stroke={accentHex} strokeWidth="3" />
+                  {f > 0 && plan.params.hasBalcony && isOpenSide && (
+                    <rect
+                      x={bPxX + bPxW * 0.2}
+                      y={groundY - f * wallH * scale - 1.05 * scale}
+                      width={bPxW * 0.6}
+                      height={1.05 * scale}
+                      fill="#38bdf844"
+                      stroke="#38bdf8"
+                      strokeWidth="1"
+                    />
+                  )}
+                </g>
+              );
+            })}
+            {/* Roof */}
+            {plan.params.roofType === 'sloped' ? (
+              <polygon
+                points={`${bPxX - 8},${bodyTopY} ${bPxX + bPxW / 2},${bodyTopY - 1.8 * scale} ${bPxX + bPxW + 8},${bodyTopY}`}
+                fill={plan.materials.roofColor || '#991b1b'}
+                stroke="#f59e0b"
+                strokeWidth="1.5"
+              />
+            ) : (
+              <rect
+                x={bPxX - 4}
+                y={bodyTopY - 0.65 * scale}
+                width={bPxW + 8}
+                height={0.65 * scale}
+                fill={plan.materials.roofColor || '#1e293b'}
+                stroke="#38bdf8"
+                strokeWidth="1"
+              />
+            )}
+            {/* Dimensioned Windows & Doors only on Open Facades */}
+            {isOpenSide ? (
+              sideOpenings.map((op) => {
+                const posAlong = activeElevation === 'front' || activeElevation === 'back' ? op.x : op.y;
+                const ox = bPxX + Math.max(0.2, Math.min(elevSpanM - op.width - 0.2, posAlong)) * scale;
+                const ow = op.width * scale;
+                const floorBottom = groundY - op.floor * wallH * scale;
+                if (op.type === 'door') {
+                  const dh = 2.2 * scale;
+                  return (
+                    <rect
+                      key={op.id}
+                      x={ox}
+                      y={floorBottom - dh}
+                      width={ow}
+                      height={dh}
+                      fill={accentHex}
+                      stroke="#f59e0b"
+                      strokeWidth="1.2"
+                    />
+                  );
+                }
+                const wh = 1.35 * scale;
+                return (
+                  <rect
+                    key={op.id}
+                    x={ox}
+                    y={floorBottom - 2.35 * scale}
+                    width={ow}
+                    height={wh}
+                    fill="#38bdf8aa"
+                    stroke="#0284c7"
+                    strokeWidth="1.2"
+                  />
+                );
+              })
+            ) : (
+              <text
+                x={svgW / 2}
+                y={bodyTopY + bodyH / 2}
+                fill="#ef4444"
+                fontSize="13"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                {pickText(language, 'جدار جار أصم (بدون نوافذ)', 'Mur mitoyen aveugle', 'Closed Neighbor Party Wall (No Windows)')}
+              </text>
+            )}
+            {/* Elevation Dimension Callout */}
+            <text x={svgW / 2} y={svgH - 12} fill="#94a3b8" fontSize="11" fontWeight="bold" textAnchor="middle">
+              {`${activeElevation.toUpperCase()} ELEVATION | Width: ${elevSpanM}m | Height: ${(floors * wallH).toFixed(1)}m | Style: ${plan.params.style}`}
+            </text>
+          </svg>
         </div>
       </div>
 
@@ -74,7 +323,12 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
             type="text"
             value={customPrompt}
             onChange={(e) => setCustomPrompt(e.target.value)}
-            placeholder="اكتب وصفاً خاصاً للواجهة التي تريدها (مثال: واجهة حجرية مودرن مع مدخل خشبي وإضاءة دافئة وقشور رخام...)"
+            placeholder={pickText(
+              language,
+              'اكتب وصفاً خاصاً للواجهة (مثال: واجهة حجرية مودرن مع مدخل خشبي وإضاءة دافئة...)',
+              'Décrivez la façade souhaitée...',
+              'Describe a custom facade render (e.g. modern limestone facade with warm LED accents)...'
+            )}
             className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-all shadow-inner"
           />
           <button
@@ -85,26 +339,26 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
             {isGeneratingImg ? (
               <>
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>جاري التوليد...</span>
+                <span>{pickText(language, 'جاري التوليد...', 'Génération...', 'Rendering...')}</span>
               </>
             ) : (
               <>
-                <Wand2 className="w-4 h-4 text-amber-300 animate-pulse" />
-                <span>توليد واجهة بالذكاء الاصطناعي</span>
+                <Wand2 className="w-4 h-4 text-amber-300" />
+                <span>{pickText(language, 'توليد واجهة بالذكاء الاصطناعي', 'Générer Rendu IA', 'Generate AI Facade')}</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Quick Facade Style Prompt Chips */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] text-slate-400 font-semibold ml-1">اقتراحات سريعة للواجهة:</span>
+          <span className="text-[11px] text-slate-400 font-semibold ml-1">
+            {pickText(language, 'اقتراحات سريعة:', 'Suggestions:', 'Quick Presets:')}
+          </span>
           {[
             'واجهة حجرية مودرن ناصعة البياض مع إضاءات دافئة',
-            'واجهة فيلا ليلية مع إضاءات LED سبوت لايت للكتل',
-            'مدخل فاخر بأبواب خشبية معتمة ونوافذ بانوراما',
-            'واجهة كلاسيكية بأعمدة رخامية وأقواس فرنسية',
-            'فيلا مع حديقة ومسبح مضاء وجلسة خارجية عصرية'
+            'واجهة فيلا جزائرية حديثة مع أقواس وقرميد قرمزي',
+            'مدخل فاخر بأبواب خشبية ونوافذ بانوراما',
+            'واجهة كلاسيكية بأعمدة رخامية',
           ].map((promptPreset, pIdx) => (
             <button
               key={pIdx}
@@ -123,7 +377,7 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
         )}
       </div>
 
-      {/* Images Grid */}
+      {/* Rendered AI Images Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {images.map((img) => (
           <div
@@ -140,7 +394,7 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
               <button
                 onClick={() => setSelectedImage(img)}
                 className="absolute top-2 left-2 p-2 bg-slate-900/80 hover:bg-slate-800 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md"
-                title="تكبير الصورة"
+                title="Expand"
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
@@ -153,18 +407,13 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
         ))}
       </div>
 
-      {/* Modal Fullscreen View */}
+      {/* Lightbox Modal */}
       {selectedImage && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="relative max-w-4xl w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between p-4 border-b border-slate-800">
               <h3 className="font-bold text-sm text-white">{selectedImage.title}</h3>
-              <button
-                onClick={() => setSelectedImage(null)}
-                className="text-slate-400 hover:text-white font-bold p-1"
-              >
-                ✕
-              </button>
+              <button onClick={() => setSelectedImage(null)} className="text-slate-400 hover:text-white font-bold p-1">✕</button>
             </div>
             <div className="p-2 bg-black flex items-center justify-center max-h-[75vh]">
               <img
@@ -184,7 +433,7 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>تحميل الصورة</span>
+                <span>{pickText(language, 'تحميل الصورة', 'Télécharger', 'Download')}</span>
               </a>
             </div>
           </div>

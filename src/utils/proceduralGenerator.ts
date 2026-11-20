@@ -10,6 +10,7 @@ import {
   RoofType,
   FacadeImageData
 } from '../types';
+import { deriveStructuralElements } from './cadGeometry';
 
 export type FacadeDirection = 'front' | 'back' | 'right' | 'left';
 
@@ -794,6 +795,18 @@ export function generateProceduralPlan(
     }
   }
 
+  // Allow Smart Site Planner manual offsets within lot bounds
+  if (params.siteSettings) {
+    const maxShiftX = Math.max(0, L - footprintL);
+    const maxShiftY = Math.max(0, W - footprintW);
+    if (typeof params.siteSettings.buildingOffsetX === 'number') {
+      offsetX = Number(Math.max(0, Math.min(maxShiftX, params.siteSettings.buildingOffsetX)).toFixed(2));
+    }
+    if (typeof params.siteSettings.buildingOffsetY === 'number') {
+      offsetY = Number(Math.max(0, Math.min(maxShiftY, params.siteSettings.buildingOffsetY)).toFixed(2));
+    }
+  }
+
   const openDirAr = openDirs
     .map((d) => (d === 'front' ? 'الأمامية' : d === 'back' ? 'الخلفية' : d === 'left' ? 'اليسرى' : 'اليمنى'))
     .join(' + ');
@@ -1334,7 +1347,7 @@ export function generateProceduralPlan(
       structuralNotes: `نظام إنشائي هيكلي خرساني معتمد، قواعد منفصلة وشريطية، وسقف هوردي بنمط ${roofType === 'flat' ? 'مسطح مع سترة' : 'مائل بالقرميد'}.`,
       estimatedCostMin: costMin,
       estimatedCostMax: costMax,
-      currency: 'SAR',
+      currency: 'DZD',
       estimatedConcreteM3: Math.round(totalBuiltArea * 0.44),
       estimatedSteelTons: Number((totalBuiltArea * 0.046).toFixed(1)),
       estimatedBricksCount: Math.round(totalBuiltArea * 33)
@@ -1342,6 +1355,7 @@ export function generateProceduralPlan(
     rooms,
     walls,
     columns,
+    ...deriveStructuralElements({ params: normalizedParams, columns, walls } as GeneratedHousePlan),
     openings,
     furniture,
     materials: {
@@ -1376,7 +1390,7 @@ export function generateMultipleProceduralOptions(params: HouseInputParams): Gen
 }
 
 /**
- * Recalculates walls, columns, facade-aware openings, and furniture when the user
+ * Recalculates walls, columns, beams, foundations, facade-aware openings, and furniture when the user
  * modifies rooms inside the interactive Room Editor.
  */
 export function updatePlanWithModifiedRooms(
@@ -1384,12 +1398,15 @@ export function updatePlanWithModifiedRooms(
   modifiedRooms: RoomData[]
 ): GeneratedHousePlan {
   const { walls, columns, openings, furniture } = buildPlanGeometryFromRooms(modifiedRooms, originalPlan.params);
+  const struct = deriveStructuralElements({ ...originalPlan, walls, columns });
 
   return {
     ...originalPlan,
     rooms: modifiedRooms,
     walls,
     columns,
+    beams: struct.beams,
+    foundations: struct.foundations,
     openings,
     furniture
   };

@@ -8,7 +8,11 @@ import {
   buildPlanGeometryFromRooms,
   buildStyleFacadeImages
 } from './src/utils/proceduralGenerator';
-import type { ArchitecturalStyle, HouseInputParams, RoomData, RoofType } from './src/types';
+import {
+  parseNaturalPromptToParams,
+  applyLocalDesignCommand
+} from './src/utils/aiAssistantEngine';
+import type { ArchitecturalStyle, GeneratedHousePlan, HouseInputParams, RoomData, RoofType } from './src/types';
 
 const app = express();
 const PORT = 3000;
@@ -35,6 +39,7 @@ const getAIClient = () => {
   }
   return new GoogleGenAI({
     apiKey,
+    apiVersion: 'v1beta',
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -211,7 +216,7 @@ function enrichGeminiOptions(rawOptions: any[], params: HouseInputParams, modelN
         structuralNotes: opt.structuralNotes || `هيكل خرساني مسلح متين بسقف ${roofType === 'sloped' ? 'مائل بالقرميد' : 'مسطح مع سترة'}.`,
         estimatedCostMin: opt.estimatedCostMin || costMin,
         estimatedCostMax: opt.estimatedCostMax || costMax,
-        currency: 'SAR' as const,
+        currency: 'DZD' as const,
         estimatedConcreteM3: Math.round(totalBuiltArea * 0.44),
         estimatedSteelTons: Number((totalBuiltArea * 0.046).toFixed(1)),
         estimatedBricksCount: Math.round(totalBuiltArea * 33),
@@ -236,7 +241,10 @@ function enrichGeminiOptions(rawOptions: any[], params: HouseInputParams, modelN
 // Endpoint: AI Generate Plan powered by Gemini 4 Hydrogen
 app.post('/api/generate-plan', async (req, res) => {
   try {
-    const params: HouseInputParams = req.body;
+    const rawParams: HouseInputParams = req.body;
+    const params: HouseInputParams = rawParams.naturalLanguagePrompt
+      ? parseNaturalPromptToParams(rawParams.naturalLanguagePrompt, rawParams)
+      : rawParams;
     const openDirs = normalizeOpenFacades(params);
     const normalizedParams: HouseInputParams = {
       ...params,
@@ -272,7 +280,8 @@ app.post('/api/generate-plan', async (req, res) => {
     const promptText = `
 أنت مهندس معماري وإنشائي استشاري أول وخبير في التوزيع المكاني البارامتري الدقيق.
 المطلوب: توليد 3 خيارات معمارية (options) مختلفة هندسياً وواقعياً لقطعة أرض بالمواصفات الدقيقة التالية:
-- أبعاد الأرض: الطول X = ${L}م، العرض Y = ${W}م (المساحة = ${L * W} م²).
+${params.naturalLanguagePrompt ? `- وصف وطلب العميل بالنص الحر: "${params.naturalLanguagePrompt}"` : ''}
+- شكل الأرض: ${params.lotShape || 'rectangle'} | الطول X = ${L}م، العرض Y = ${W}م (المساحة = ${L * W} م²).
 - عدد الطوابق: ${floorsCount} (من 0 للأرضي حتى ${floorsCount - 1}).
 - عدد الواجهات المفتوحة: ${openDirs.length} واجهات فقط!
   * الواجهات المفتوحة (المسموح بها للنوافذ والمداخل): ${openDirs.map(dirLabel).join(' | ')}.
@@ -300,7 +309,7 @@ app.post('/api/generate-plan', async (req, res) => {
 `;
 
     // Primary model: Gemini 4 Hydrogen (no temperature/topP/topK/thinkingBudget allowed!)
-    const modelsToTry = ['gemini-4-hydrogen', 'gemini-2.5-flash'];
+    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
     let lastError: any = null;
     let successfulData: any = null;
     let modelUsed = '';
@@ -358,14 +367,22 @@ app.post('/api/generate-plan', async (req, res) => {
         };
 
         if (model === 'gemini-4-hydrogen') {
-          config.thinkingConfig = { thinkingLevel: ThinkingLevel.MEDIUM };
+          config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
         }
 
-        const response = await ai.models.generateContent({
-          model,
-          contents: promptText,
-          config,
-        });
+        const timeoutMs = model === 'gemini-4-hydrogen' ? 20000 : 12000;
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs}ms`)), timeoutMs)
+        );
+
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model,
+            contents: promptText,
+            config,
+          }),
+          timeoutPromise,
+        ]);
 
         const jsonString = response.text ? response.text.trim() : '';
         const parsed = JSON.parse(jsonString);
@@ -383,10 +400,19 @@ app.post('/api/generate-plan', async (req, res) => {
     }
 
     if (successfulData && successfulData.options) {
-      const enrichedPlans = enrichGeminiOptions(successfulData.options, normalizedParams, modelUsed);
+      const enrichedPlans: GeneratedHousePlan[] = enrichGeminiOptions(successfulData.options, normalizedParams, modelUsed);
+      if (enrichedPlans.length < 3) {
+        const extraVariants = generateMultipleProceduralOptions(normalizedParams);
+        for (let i = enrichedPlans.length; i < 3 && i < extraVariants.length; i++) {
+          enrichedPlans.push({
+            ...extraVariants[i],
+            optionTitle: extraVariants[i].optionTitle || `الخيار 0${i + 1}`,
+          });
+        }
+      }
       return res.json({
         success: true,
-        plans: enrichedPlans,
+        plans: enrichedPlans.slice(0, 3),
         plan: enrichedPlans[0],
         source: 'gemini',
         modelUsed,
@@ -464,6 +490,165 @@ app.post('/api/generate-facade', async (req, res) => {
     } catch (imgError) {
       console.error('Image generation error:', imgError);
       return res.json({ success: true, imageUrl: localFallback, isFallback: true });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: AI Architectural Design Assistant (executes natural-language edits on active plan)
+app.post('/api/ai-assistant', async (req, res) => {
+  try {
+    const { plan, command } = req.body || {};
+    if (!plan || !command) {
+      return res.status(400).json({ success: false, error: 'Missing plan or command' });
+    }
+
+    const ai = getAIClient();
+    // Always evaluate deterministic geometric engine first for instant structural precision
+    const localRes = applyLocalDesignCommand(plan, String(command));
+
+    if (!ai) {
+      return res.json({
+        success: true,
+        applied: localRes.applied,
+        explanation: localRes.explanation,
+        updatedPlan: localRes.updatedPlan,
+        source: 'local',
+      });
+    }
+
+    // If local rule engine clearly matched a direct deterministic mutation, still enrich or return directly
+    if (localRes.applied && localRes.updatedPlan) {
+      return res.json({
+        success: true,
+        applied: true,
+        explanation: localRes.explanation,
+        updatedPlan: localRes.updatedPlan,
+        source: 'local',
+      });
+    }
+
+    // Complex architectural modifications via Gemini 4 Hydrogen
+    try {
+      const L = Number(plan.params?.length) || 15;
+      const W = Number(plan.params?.width) || 10;
+      const floors = Number(plan.params?.floorsCount) || 1;
+      const summaryRooms = (plan.rooms || []).map((r: RoomData) => ({
+        id: r.id,
+        nameAr: r.nameAr,
+        category: r.category,
+        floor: r.floor,
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        length: r.length,
+      }));
+
+      const assistantPrompt = `
+أنت مساعد التصميم المعماري الذكي داخل استوديو ARCH-AI PRO.
+لديك هذا المخطط النشط حالياً:
+- أبعاد الأرض: ${L}م × ${W}م | الطوابق: ${floors} | الطراز: ${plan.params?.style} | السقف: ${plan.params?.roofType}
+- الغرف الحالية: ${JSON.stringify(summaryRooms)}
+
+أمر المستخدم المطلوب تنفيذه: "${command}"
+
+المطلوب:
+1. نفّذ التعديل المطلوب على مصفوفة الغرف rooms (مع الحفاظ على عدم التداخل وضمن الحدود 0.25 <= x, x+width <= ${L - 0.25} و 0.25 <= y, y+length <= ${W - 0.25}).
+2. إن لم يكن التعديل ممكناً هندسياً داخل حدود الأرض، اضبط applied = false واشرح السبب واقترح الحل.
+3. أرجع شرحاً معمارياً واضحاً بالعربية لما تم تعديله.
+`;
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini assistant timeout')), 8000)
+      );
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: assistantPrompt,
+          config: {
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            systemInstruction:
+              'أنت مهندس معماري CAD تساعد المستخدم في تعديل مخططه عبر JSON صارم وصالح هندسياً.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                applied: { type: Type.BOOLEAN },
+                explanation: { type: Type.STRING },
+                roofType: { type: Type.STRING },
+                facadeWallColor: { type: Type.STRING },
+                rooms: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      nameAr: { type: Type.STRING },
+                      category: { type: Type.STRING },
+                      floor: { type: Type.INTEGER },
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER },
+                      width: { type: Type.NUMBER },
+                      length: { type: Type.NUMBER },
+                    },
+                    required: ['nameAr', 'category', 'floor', 'x', 'y', 'width', 'length'],
+                  },
+                },
+              },
+              required: ['applied', 'explanation'],
+            },
+          },
+        }),
+        timeoutPromise,
+      ]);
+
+      const parsed = JSON.parse((response.text || '{}').trim());
+      if (parsed.applied && Array.isArray(parsed.rooms) && parsed.rooms.length > 0) {
+        const cleanRooms = sanitizeAndDeoverlapRooms(parsed.rooms, L, W, floors);
+        const nextParams: HouseInputParams = {
+          ...plan.params,
+          roofType: parsed.roofType === 'sloped' || parsed.roofType === 'flat' ? parsed.roofType : plan.params.roofType,
+          facadeWallColor: parsed.facadeWallColor || plan.params.facadeWallColor,
+        };
+        const { walls, columns, openings, furniture } = buildPlanGeometryFromRooms(cleanRooms, nextParams);
+        return res.json({
+          success: true,
+          applied: true,
+          explanation: parsed.explanation,
+          source: 'gemini',
+          updatedPlan: {
+            ...plan,
+            params: nextParams,
+            rooms: cleanRooms,
+            walls,
+            columns,
+            openings,
+            furniture,
+            materials: {
+              ...plan.materials,
+              exteriorWallColor: nextParams.facadeWallColor || plan.materials.exteriorWallColor,
+            },
+          },
+        });
+      }
+
+      return res.json({
+        success: true,
+        applied: false,
+        explanation: parsed.explanation || localRes.explanation,
+        updatedPlan: null,
+        source: 'gemini',
+      });
+    } catch (aiErr: any) {
+      console.warn('Gemini assistant fallback to local:', aiErr?.message);
+      return res.json({
+        success: true,
+        applied: localRes.applied,
+        explanation: localRes.explanation,
+        updatedPlan: localRes.updatedPlan,
+        source: 'local',
+      });
     }
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

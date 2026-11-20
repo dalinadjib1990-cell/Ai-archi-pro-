@@ -45,7 +45,7 @@ export const DEFAULT_HOUSE_PLAN: GeneratedHousePlan = {
     structuralNotes: 'أساسات قواعد منفصلة مع شريطية عند الحوائط الحاملة، وأعمدة خرسانية بأبعاد 20×50 سم مع بلاطة سقف هوردي (Ribbed Slab) بسمك 25 سم.',
     estimatedCostMin: 140000,
     estimatedCostMax: 185000,
-    currency: 'SAR',
+    currency: 'DZD',
     estimatedConcreteM3: 135,
     estimatedSteelTons: 14.2,
     estimatedBricksCount: 9800
