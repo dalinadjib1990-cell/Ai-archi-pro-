@@ -247,10 +247,28 @@ export function buildPlanGeometryFromRooms(
   const floors = Math.max(1, Math.min(4, Number(params.floorsCount) || 1));
   const openDirs = normalizeOpenFacades(params);
 
-  const offsetX = bounds?.offsetX ?? 0;
-  const offsetY = bounds?.offsetY ?? 0;
-  const footprintL = bounds?.footprintL ?? L;
-  const footprintW = bounds?.footprintW ?? W;
+  const indoorAll = rooms.filter((r) => r.category !== 'outdoor' && r.category !== 'balcony');
+  let offsetX = bounds?.offsetX ?? 0;
+  let offsetY = bounds?.offsetY ?? 0;
+  let footprintL = bounds?.footprintL ?? L;
+  let footprintW = bounds?.footprintW ?? W;
+
+  if (!bounds && indoorAll.length > 0) {
+    const rawMinX = Math.max(0, Math.min(...indoorAll.map((r) => r.x)) - 0.25);
+    const rawMaxX = Math.min(L, Math.max(...indoorAll.map((r) => r.x + r.width)) + 0.25);
+    const rawMinY = Math.max(0, Math.min(...indoorAll.map((r) => r.y)) - 0.25);
+    const rawMaxY = Math.min(W, Math.max(...indoorAll.map((r) => r.y + r.length)) + 0.25);
+    const snappedMinX = rawMinX <= 0.6 ? 0 : Number(rawMinX.toFixed(1));
+    const snappedMaxX = rawMaxX >= L - 0.6 ? L : Number(rawMaxX.toFixed(1));
+    const snappedMinY = rawMinY <= 0.6 ? 0 : Number(rawMinY.toFixed(1));
+    const snappedMaxY = rawMaxY >= W - 0.6 ? W : Number(rawMaxY.toFixed(1));
+    if (snappedMaxX - snappedMinX >= 4.0 && snappedMaxY - snappedMinY >= 4.0) {
+      offsetX = snappedMinX;
+      offsetY = snappedMinY;
+      footprintL = Number((snappedMaxX - snappedMinX).toFixed(2));
+      footprintW = Number((snappedMaxY - snappedMinY).toFixed(2));
+    }
+  }
 
   const minX = offsetX;
   const maxX = Number((offsetX + footprintL).toFixed(2));
@@ -344,7 +362,14 @@ export function buildPlanGeometryFromRooms(
 
     // A) FRONT WALL (y = maxY) — Open only if 'front' is in openDirs
     if (openDirs.includes('front')) {
-      const frontRooms = floorRooms.filter((r) => Math.abs((r.y + r.length) - maxY) <= eps && r.category !== 'outdoor' && r.category !== 'balcony');
+      const indoorFloor = floorRooms.filter((r) => r.category !== 'outdoor' && r.category !== 'balcony');
+      let frontRooms = indoorFloor.filter((r) => Math.abs((r.y + r.length) - maxY) <= eps);
+      if (frontRooms.length === 0 && indoorFloor.length > 0) {
+        const maxFloorY = Math.max(...indoorFloor.map((r) => r.y + r.length));
+        frontRooms = indoorFloor.filter((r) => Math.abs((r.y + r.length) - maxFloorY) <= 1.2);
+      }
+      let frontWindowCount = 0;
+
       for (const rm of frontRooms) {
         if (rm.category === 'garage' && f === 0) {
           const gW = Number(Math.min(3.0, Math.max(2.2, rm.width * 0.72)).toFixed(2));
@@ -361,7 +386,7 @@ export function buildPlanGeometryFromRooms(
           continue;
         }
 
-        if (!mainEntrancePlaced && (rm.category === 'living' || rm.category === 'hall')) {
+        if (!mainEntrancePlaced && (rm.category === 'living' || rm.category === 'hall' || frontRooms[0]?.id === rm.id)) {
           const dW = 1.4;
           openings.push({
             id: `op-${opId++}`,
@@ -376,7 +401,7 @@ export function buildPlanGeometryFromRooms(
           mainEntrancePlaced = true;
 
           // Remaining front wall of this room gets a window if wide enough
-          if (rm.width > 3.6) {
+          if (rm.width > 3.4) {
             const winW = Number(Math.min(2.4, Math.max(1.2, rm.width * 0.42)).toFixed(2));
             openings.push({
               id: `op-${opId++}`,
@@ -388,6 +413,7 @@ export function buildPlanGeometryFromRooms(
               label: `نافذة ${rm.nameAr}`,
               floor: f
             });
+            frontWindowCount++;
           }
         } else if (isDaylightCategory(rm.category)) {
           const winW = Number(Math.min(2.6, Math.max(1.1, rm.width * 0.52)).toFixed(2));
@@ -401,6 +427,7 @@ export function buildPlanGeometryFromRooms(
             label: `نافذة ${rm.nameAr}`,
             floor: f
           });
+          frontWindowCount++;
         } else if (rm.category === 'bathroom') {
           openings.push({
             id: `op-${opId++}`,
@@ -412,6 +439,7 @@ export function buildPlanGeometryFromRooms(
             label: `هواية ${rm.nameAr}`,
             floor: f
           });
+          frontWindowCount++;
         }
       }
 
@@ -423,8 +451,21 @@ export function buildPlanGeometryFromRooms(
           y: Number((maxY - 0.12).toFixed(2)),
           width: 1.4,
           rotation: 0,
-          label: 'المدخل الرئيسي',
+          label: 'المدخل الرئيسي الفاخر',
           floor: 0
+        });
+      }
+
+      if (frontWindowCount === 0) {
+        openings.push({
+          id: `op-${opId++}`,
+          type: 'window',
+          x: Number((minX + footprintL * 0.58).toFixed(2)),
+          y: Number((maxY - 0.12).toFixed(2)),
+          width: Number(Math.min(2.2, footprintL * 0.24).toFixed(2)),
+          rotation: 0,
+          label: f === 0 ? 'نافذة الواجهة الرئيسية' : `نافذة الطابق ${f}`,
+          floor: f
         });
       }
     }

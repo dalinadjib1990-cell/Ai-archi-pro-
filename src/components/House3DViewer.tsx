@@ -414,14 +414,14 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     });
 
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: viewMode === 'night' ? 0xfef08a : 0x7dd3fc,
-      emissive: viewMode === 'night' ? new THREE.Color(0xf59e0b) : new THREE.Color(0x000000),
-      emissiveIntensity: viewMode === 'night' ? 0.32 : 0,
+      color: viewMode === 'night' ? 0xfef08a : 0x0284c7,
+      emissive: viewMode === 'night' ? new THREE.Color(0xf59e0b) : new THREE.Color(0x0c4a6e),
+      emissiveIntensity: viewMode === 'night' ? 0.45 : 0.28,
       transparent: true,
-      opacity: viewMode === 'night' ? 0.65 : 0.5,
-      roughness: 0.08,
-      metalness: 0.15,
-      reflectivity: 0.9,
+      opacity: viewMode === 'night' ? 0.78 : 0.76,
+      roughness: 0.06,
+      metalness: 0.45,
+      reflectivity: 0.95,
       ior: 1.5,
     });
 
@@ -432,7 +432,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     });
 
     const doorMat = new THREE.MeshStandardMaterial({
-      color: 0x5c2c0e,
+      color: 0x6b3410,
       map: tex.woodGrain,
       roughness: 0.35,
       metalness: 0.08,
@@ -450,6 +450,42 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
       roughness: 0.45,
     });
 
+    // Compute ACTUAL Building Footprint Bounds from exterior walls or indoor rooms
+    const extWalls = plan.walls.filter((w) => w.isExterior);
+    const indoorRoomsAll = plan.rooms.filter((r) => r.category !== 'outdoor' && r.category !== 'balcony');
+    let bMinX = 0;
+    let bMaxX = L;
+    let bMinY = 0;
+    let bMaxY = W;
+    if (extWalls.length > 0) {
+      const xs = extWalls.flatMap((w) => [w.x1, w.x2]);
+      const ys = extWalls.flatMap((w) => [w.y1, w.y2]);
+      const minXw = Math.min(...xs);
+      const maxXw = Math.max(...xs);
+      const minYw = Math.min(...ys);
+      const maxYw = Math.max(...ys);
+      if (maxXw - minXw >= 3 && maxYw - minYw >= 3) {
+        bMinX = minXw;
+        bMaxX = maxXw;
+        bMinY = minYw;
+        bMaxY = maxYw;
+      }
+    } else if (indoorRoomsAll.length > 0) {
+      bMinX = Math.max(0, Math.min(...indoorRoomsAll.map((r) => r.x)) - 0.25);
+      bMaxX = Math.min(L, Math.max(...indoorRoomsAll.map((r) => r.x + r.width)) + 0.25);
+      bMinY = Math.max(0, Math.min(...indoorRoomsAll.map((r) => r.y)) - 0.25);
+      bMaxY = Math.min(W, Math.max(...indoorRoomsAll.map((r) => r.y + r.length)) + 0.25);
+    }
+
+    const bL = bMaxX - bMinX;
+    const bW = bMaxY - bMinY;
+    const frontZ = bMaxY - cz;
+    const backZ = bMinY - cz;
+    const leftX = bMinX - cx;
+    const rightX = bMaxX - cx;
+    const bCx = (leftX + rightX) / 2;
+    const bCz = (backZ + frontZ) / 2;
+
     // Open-Facade-Aware Lot Setbacks (Zero protrusion into closed neighbor property!)
     const hasFront = openFacadeDirections.includes('front');
     const hasBack = openFacadeDirections.includes('back');
@@ -459,19 +495,24 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     const poolW = Math.min(4.2, Math.max(2.6, L * 0.24));
     const poolL = Math.min(6.0, Math.max(3.6, W * 0.38));
 
-    const marginFront = hasFront ? 3.4 : 0.2;
-    const marginBack = hasBack ? 2.4 : 0.2;
-    const marginLeft = hasLeft ? (showGardenDecor && plan.params.hasGarden ? poolW + 2.4 : 2.2) : 0.2;
-    const marginRight = hasRight ? (!hasLeft && showGardenDecor && plan.params.hasGarden ? poolW + 2.4 : 2.2) : 0.2;
+    const marginFront = hasFront ? 3.2 : 0.18;
+    const marginBack = hasBack ? 2.2 : 0.18;
+    const marginLeft = hasLeft ? (showGardenDecor && plan.params.hasGarden ? poolW + 2.2 : 2.0) : 0.18;
+    const marginRight = hasRight ? (!hasLeft && showGardenDecor && plan.params.hasGarden ? poolW + 2.2 : 2.0) : 0.18;
 
-    const totalFenceW = L + marginLeft + marginRight;
-    const totalFenceD = W + marginFront + marginBack;
-    const fenceCenterX = (marginRight - marginLeft) / 2;
-    const fenceCenterZ = (marginFront - marginBack) / 2;
+    const fenceMinX = Math.min(leftX - marginLeft, hasLeft ? -L / 2 - 1.6 : leftX - 0.18);
+    const fenceMaxX = Math.max(rightX + marginRight, hasRight ? L / 2 + 1.6 : rightX + 0.18);
+    const fenceMinZ = Math.min(backZ - marginBack, hasBack ? -W / 2 - 1.6 : backZ - 0.18);
+    const fenceMaxZ = Math.max(frontZ + marginFront, hasFront ? W / 2 + 1.8 : frontZ + 0.18);
+
+    const totalFenceW = fenceMaxX - fenceMinX;
+    const totalFenceD = fenceMaxZ - fenceMinZ;
+    const fenceCenterX = (fenceMinX + fenceMaxX) / 2;
+    const fenceCenterZ = (fenceMinZ + fenceMaxZ) / 2;
 
     // Ground Lawn Landscape
     const groundMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(L * 3 + 16, W * 3 + 16),
+      new THREE.PlaneGeometry(Math.max(L, bL) * 3 + 18, Math.max(W, bW) * 3 + 18),
       new THREE.MeshStandardMaterial({ map: tex.lawnGrass, roughness: 0.92 })
     );
     groundMesh.rotation.x = -Math.PI / 2;
@@ -479,20 +520,16 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     groundMesh.receiveShadow = true;
     houseGroup.add(groundMesh);
 
-    // Paved Terrace Plinth strictly inside open setbacks
+    // Paved Terrace Plinth strictly inside open setbacks around building footprint
+    const pMinX = leftX - (hasLeft ? 1.1 : 0.12);
+    const pMaxX = rightX + (hasRight ? 1.1 : 0.12);
+    const pMinZ = backZ - (hasBack ? 1.1 : 0.12);
+    const pMaxZ = frontZ + (hasFront ? 1.3 : 0.12);
     const patioMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        L + (hasLeft ? 1.2 : 0.15) + (hasRight ? 1.2 : 0.15),
-        0.1,
-        W + (hasFront ? 1.4 : 0.15) + (hasBack ? 1.2 : 0.15)
-      ),
+      new THREE.BoxGeometry(pMaxX - pMinX, 0.1, pMaxZ - pMinZ),
       new THREE.MeshStandardMaterial({ map: tex.paverTiles, color: 0x94a3b8, roughness: 0.55 })
     );
-    patioMesh.position.set(
-      ((hasRight ? 1.2 : 0.15) - (hasLeft ? 1.2 : 0.15)) / 2,
-      -0.02,
-      ((hasFront ? 1.4 : 0.15) - (hasBack ? 1.2 : 0.15)) / 2
-    );
+    patioMesh.position.set((pMinX + pMaxX) / 2, -0.02, (pMinZ + pMaxZ) / 2);
     patioMesh.receiveShadow = true;
     houseGroup.add(patioMesh);
 
@@ -502,16 +539,19 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         new THREE.BoxGeometry(totalFenceW + 10, 0.06, 4.2),
         new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 })
       );
-      roadMesh.position.set(fenceCenterX, -0.05, W / 2 + marginFront + 2.3);
+      roadMesh.position.set(fenceCenterX, -0.05, fenceMaxZ + 2.3);
       roadMesh.receiveShadow = true;
       houseGroup.add(roadMesh);
 
       if (plan.params.hasGarage) {
+        const garageRm = plan.rooms.find((r) => r.floor === 0 && r.category === 'garage');
+        const driveX = garageRm ? garageRm.x + garageRm.width / 2 - cx : bCx + bL * 0.28;
+        const driveLen = Math.max(1.8, fenceMaxZ - frontZ);
         const drivewayMesh = new THREE.Mesh(
-          new THREE.BoxGeometry(3.8, 0.07, marginFront + 0.4),
+          new THREE.BoxGeometry(garageRm ? Math.min(3.8, garageRm.width * 0.9) : 3.4, 0.07, driveLen + 0.4),
           new THREE.MeshStandardMaterial({ map: tex.paverTiles, color: 0x475569, roughness: 0.6 })
         );
-        drivewayMesh.position.set(L / 2 - 2.0, -0.015, W / 2 + marginFront / 2);
+        drivewayMesh.position.set(driveX, -0.015, frontZ + driveLen / 2);
         drivewayMesh.receiveShadow = true;
         houseGroup.add(drivewayMesh);
       }
@@ -537,17 +577,17 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         houseGroup.add(m);
       };
 
-      // Back, Left, Right fences positioned along actual setbacks (flush to building on closed neighbor sides!)
-      addFenceSeg(totalFenceW, fenceH, fThick, fenceCenterX, fenceH / 2, -W / 2 - marginBack);
-      addFenceSeg(fThick, fenceH, totalFenceD, -L / 2 - marginLeft, fenceH / 2, fenceCenterZ);
-      addFenceSeg(fThick, fenceH, totalFenceD, L / 2 + marginRight, fenceH / 2, fenceCenterZ);
+      // Back, Left, Right fences positioned along actual setbacks
+      addFenceSeg(totalFenceW, fenceH, fThick, fenceCenterX, fenceH / 2, fenceMinZ);
+      addFenceSeg(fThick, fenceH, totalFenceD, fenceMinX, fenceH / 2, fenceCenterZ);
+      addFenceSeg(fThick, fenceH, totalFenceD, fenceMaxX, fenceH / 2, fenceCenterZ);
 
       // Front fence with gate centered on front street
       const gateWidth = Math.min(3.8, totalFenceW * 0.35);
       const sideFenceW = Math.max(0.5, (totalFenceW - gateWidth) / 2);
-      const fZ = W / 2 + marginFront;
-      addFenceSeg(sideFenceW, fenceH, fThick, fenceCenterX - totalFenceW / 2 + sideFenceW / 2, fenceH / 2, fZ);
-      addFenceSeg(sideFenceW, fenceH, fThick, fenceCenterX + totalFenceW / 2 - sideFenceW / 2, fenceH / 2, fZ);
+      const fZ = fenceMaxZ;
+      addFenceSeg(sideFenceW, fenceH, fThick, fenceMinX + sideFenceW / 2, fenceH / 2, fZ);
+      addFenceSeg(sideFenceW, fenceH, fThick, fenceMaxX - sideFenceW / 2, fenceH / 2, fZ);
 
       [-gateWidth / 2, gateWidth / 2].forEach((gx) => {
         const pil = new THREE.Mesh(new THREE.BoxGeometry(0.45, fenceH + 0.35, 0.45), fenceCapMat);
@@ -567,9 +607,9 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     // Outdoor Pool, Fountain & Trees placed ONLY inside open garden zones
     if (showGardenDecor && plan.params.hasGarden) {
       const poolSideX = hasLeft
-        ? -L / 2 - 1.1 - poolW / 2
+        ? leftX - 1.1 - poolW / 2
         : hasRight
-        ? L / 2 + 1.1 + poolW / 2
+        ? rightX + 1.1 + poolW / 2
         : null;
 
       if (poolSideX !== null) {
@@ -577,7 +617,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           new THREE.BoxGeometry(poolW + 0.45, 0.1, poolL + 0.45),
           new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 })
         );
-        rimMesh.position.set(poolSideX, 0.02, 0);
+        rimMesh.position.set(poolSideX, 0.02, bCz);
         rimMesh.receiveShadow = true;
         houseGroup.add(rimMesh);
 
@@ -593,7 +633,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             opacity: 0.88,
           })
         );
-        poolMesh.position.set(poolSideX, 0.06, 0);
+        poolMesh.position.set(poolSideX, 0.06, bCz);
         houseGroup.add(poolMesh);
 
         if (style === 'andalusian' || style === 'algerian') {
@@ -601,14 +641,14 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             new THREE.BoxGeometry(3.2, 0.03, 3.2),
             new THREE.MeshStandardMaterial({ map: tex.zelligeMosaic, roughness: 0.25 })
           );
-          zelligePatio.position.set(poolSideX, 0.02, poolL / 2 + 1.9);
+          zelligePatio.position.set(poolSideX, 0.02, bCz + poolL / 2 + 1.9);
           houseGroup.add(zelligePatio);
 
           const basin = new THREE.Mesh(
             new THREE.CylinderGeometry(0.95, 1.05, 0.35, 8),
             new THREE.MeshStandardMaterial({ color: 0xfbf8f2, roughness: 0.2 })
           );
-          basin.position.set(poolSideX, 0.19, poolL / 2 + 1.9);
+          basin.position.set(poolSideX, 0.19, bCz + poolL / 2 + 1.9);
           houseGroup.add(basin);
         }
       }
@@ -618,12 +658,12 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
       const foliageMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.65 });
       const treeCoords: { x: number; z: number }[] = [];
       if (hasFront) {
-        treeCoords.push({ x: -L * 0.38, z: W / 2 + 1.8 });
-        treeCoords.push({ x: L * 0.38, z: W / 2 + 1.8 });
+        treeCoords.push({ x: bCx - bL * 0.38, z: fenceMaxZ - 1.2 });
+        treeCoords.push({ x: bCx + bL * 0.38, z: fenceMaxZ - 1.2 });
       }
-      if (hasLeft) treeCoords.push({ x: -L / 2 - 1.2, z: -W * 0.36 });
-      if (hasRight) treeCoords.push({ x: L / 2 + 1.1, z: -W * 0.32 });
-      if (hasBack) treeCoords.push({ x: 0, z: -W / 2 - 1.2 });
+      if (hasLeft) treeCoords.push({ x: leftX - 1.1, z: bCz - bW * 0.36 });
+      if (hasRight) treeCoords.push({ x: rightX + 1.1, z: bCz - bW * 0.32 });
+      if (hasBack) treeCoords.push({ x: bCx, z: backZ - 1.2 });
 
       treeCoords.forEach((pos) => {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 2.5, 8), trunkMat);
@@ -645,7 +685,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
 
     const wallHeight = 3.2;
 
-    // Helper: Build segmented exterior wall with TRUE recessed window & door openings (no Z-fighting!)
+    // Helper: Build segmented exterior wall with TRUE recessed window & door openings (aligned to actual footprint bounds!)
     const buildOpenExteriorWall = (
       dir: FacadeDirection,
       floorIdx: number,
@@ -653,59 +693,97 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
     ) => {
       const thick = 0.25;
       const isHorizontal = dir === 'front' || dir === 'back';
-      const span = isHorizontal ? L : W;
+      const wallStart = isHorizontal ? leftX : backZ;
+      const wallEnd = isHorizontal ? rightX : frontZ;
+      const span = wallEnd - wallStart;
+
       const openingsOnSide = plan.openings
         .filter((op) => {
           if (op.floor !== floorIdx) return false;
-          if (dir === 'front') return op.y >= W - 0.65;
-          if (dir === 'back') return op.y <= 0.65;
-          if (dir === 'left') return op.x <= 0.65;
-          return op.x >= L - 0.65;
+          if (op.id?.startsWith('op-int-')) return false;
+          if (dir === 'front') return Math.abs(op.y - bMaxY) <= 0.95;
+          if (dir === 'back') return Math.abs(op.y - bMinY) <= 0.95;
+          if (dir === 'left') return Math.abs(op.x - bMinX) <= 0.95;
+          return Math.abs(op.x - bMaxX) <= 0.95;
         })
         .map((op) => {
           const startPos = isHorizontal ? op.x - cx : op.y - cz;
-          const clampedStart = Math.max(-span / 2 + 0.3, Math.min(span / 2 - op.width - 0.3, startPos));
+          const clampedStart = Math.max(wallStart + 0.25, Math.min(wallEnd - Math.min(op.width, span - 0.6) - 0.25, startPos));
           return {
             ...op,
             s: clampedStart,
-            e: clampedStart + Math.min(op.width, span - 0.6),
+            e: clampedStart + Math.min(op.width, span - 0.5),
           };
         })
         .sort((a, b) => a.s - b.s);
 
-      // Deduplicate/prevent overlapping opening segments along the same wall
+      // Guarantee open facades NEVER appear blank if no openings matched
+      if (openingsOnSide.length === 0 && span >= 3.2) {
+        if (dir === 'front' && floorIdx === 0) {
+          openingsOnSide.push({
+            id: `synth-door-${dir}-${floorIdx}`,
+            type: 'door',
+            x: bMinX + 1.2,
+            y: bMaxY - 0.12,
+            width: 1.4,
+            rotation: 0,
+            label: 'المدخل الرئيسي الفاخر',
+            floor: 0,
+            s: wallStart + Math.min(1.2, span * 0.18),
+            e: wallStart + Math.min(1.2, span * 0.18) + 1.4,
+          });
+        }
+        const winStart = dir === 'front' && floorIdx === 0 ? wallStart + span * 0.55 : wallStart + span * 0.22;
+        const winWidth = Math.min(2.1, Math.max(1.2, span * 0.22));
+        openingsOnSide.push({
+          id: `synth-win1-${dir}-${floorIdx}`,
+          type: 'window',
+          x: bMinX,
+          y: bMaxY,
+          width: winWidth,
+          rotation: 0,
+          label: 'نافذة واجهة',
+          floor: floorIdx,
+          s: winStart,
+          e: Math.min(wallEnd - 0.35, winStart + winWidth),
+        });
+      }
+
+      // Prevent overlapping opening segments along the same wall without silently dropping windows
       const cleanOps: typeof openingsOnSide = [];
-      let cursor = -span / 2;
+      let cursor = wallStart + 0.2;
       for (const op of openingsOnSide) {
-        if (op.s >= cursor + 0.15 && op.e <= span / 2 - 0.15) {
-          cleanOps.push(op);
-          cursor = op.e;
+        const adjS = Math.max(op.s, cursor);
+        const adjE = Math.min(op.e, wallEnd - 0.2);
+        if (adjE - adjS >= 0.55) {
+          cleanOps.push({ ...op, s: adjS, e: adjE });
+          cursor = adjE + 0.15;
         }
       }
 
       const placeSegment = (posAlong: number, len: number, h: number, yCenter: number, mat: THREE.Material) => {
-        if (len <= 0.05 || h <= 0.05) return;
+        if (len <= 0.04 || h <= 0.04) return;
         const geo = isHorizontal
           ? new THREE.BoxGeometry(len, h, thick)
           : new THREE.BoxGeometry(thick, h, len);
         const mesh = new THREE.Mesh(geo, mat);
-        if (dir === 'front') mesh.position.set(posAlong, yCenter, W / 2 - thick / 2);
-        else if (dir === 'back') mesh.position.set(posAlong, yCenter, -W / 2 + thick / 2);
-        else if (dir === 'left') mesh.position.set(-L / 2 + thick / 2, yCenter, posAlong);
-        else mesh.position.set(L / 2 - thick / 2, yCenter, posAlong);
+        if (dir === 'front') mesh.position.set(posAlong, yCenter, frontZ - thick / 2);
+        else if (dir === 'back') mesh.position.set(posAlong, yCenter, backZ + thick / 2);
+        else if (dir === 'left') mesh.position.set(leftX + thick / 2, yCenter, posAlong);
+        else mesh.position.set(rightX - thick / 2, yCenter, posAlong);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         houseGroup.add(mesh);
       };
 
       const getWorldCoord = (posAlong: number, offsetOutward: number): [number, number] => {
-        if (dir === 'front') return [posAlong, W / 2 - thick / 2 + offsetOutward];
-        if (dir === 'back') return [posAlong, -W / 2 + thick / 2 - offsetOutward];
-        if (dir === 'left') return [-L / 2 + thick / 2 - offsetOutward, posAlong];
-        return [L / 2 - thick / 2 + offsetOutward, posAlong];
+        if (dir === 'front') return [posAlong, frontZ - thick / 2 + offsetOutward];
+        if (dir === 'back') return [posAlong, backZ + thick / 2 - offsetOutward];
+        if (dir === 'left') return [leftX + thick / 2 - offsetOutward, posAlong];
+        return [rightX - thick / 2 + offsetOutward, posAlong];
       };
 
-      let wallPos = -span / 2;
+      let wallPos = wallStart;
       for (const op of cleanOps) {
         // Solid pier before opening
         if (op.s > wallPos) {
@@ -717,77 +795,140 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         const isGarageDoor = op.type === 'door' && (op.label.includes('مرآب') || op.label.includes('كراج'));
 
         if (op.type === 'door') {
-          const doorH = isGarageDoor ? 2.45 : 2.35;
+          const doorH = isGarageDoor ? 2.5 : 2.4;
           // Lintel header above door
           placeSegment(bayCenter, bayW, wallHeight - doorH, floorY + doorH + (wallHeight - doorH) / 2, wallMat);
 
-          // Door frame + panel
-          const [dx, dz] = getWorldCoord(bayCenter, 0);
+          // Recessed door leaf
+          const [dx, dz] = getWorldCoord(bayCenter, 0.02);
           const doorGeo = isHorizontal
-            ? new THREE.BoxGeometry(bayW - 0.08, doorH - 0.04, 0.1)
-            : new THREE.BoxGeometry(0.1, doorH - 0.04, bayW - 0.08);
+            ? new THREE.BoxGeometry(bayW - 0.12, doorH - 0.06, 0.12)
+            : new THREE.BoxGeometry(0.12, doorH - 0.06, bayW - 0.12);
           const doorMesh = new THREE.Mesh(doorGeo, isGarageDoor ? garageDoorMat : doorMat);
           doorMesh.position.set(dx, floorY + doorH / 2, dz);
           doorMesh.castShadow = true;
           houseGroup.add(doorMesh);
 
-          // Decorative canopy over main entrance on ground floor
-          if (floorIdx === 0 && !isGarageDoor && op.label.includes('الرئيسي')) {
-            const [cxOut, czOut] = getWorldCoord(bayCenter, 0.62);
-            const canopyGeo = isHorizontal
-              ? new THREE.BoxGeometry(bayW + 1.1, 0.16, 1.25)
-              : new THREE.BoxGeometry(1.25, 0.16, bayW + 1.1);
-            const canopy = new THREE.Mesh(canopyGeo, accentMat);
-            canopy.position.set(cxOut, floorY + doorH + 0.16, czOut);
-            canopy.castShadow = true;
-            houseGroup.add(canopy);
+          // Protruding Door Frame (Top lintel + Left & Right jambs)
+          const [fx, fz] = getWorldCoord(bayCenter, 0.04);
+          const dTopGeo = isHorizontal
+            ? new THREE.BoxGeometry(bayW + 0.08, 0.1, 0.3)
+            : new THREE.BoxGeometry(0.3, 0.1, bayW + 0.08);
+          const dTop = new THREE.Mesh(dTopGeo, frameMat);
+          dTop.position.set(fx, floorY + doorH, fz);
+          houseGroup.add(dTop);
+
+          [-bayW / 2 + 0.04, bayW / 2 - 0.04].forEach((jOff) => {
+            const [jx, jz] = getWorldCoord(bayCenter + jOff, 0.04);
+            const jGeo = isHorizontal
+              ? new THREE.BoxGeometry(0.09, doorH, 0.3)
+              : new THREE.BoxGeometry(0.3, doorH, 0.09);
+            const jamb = new THREE.Mesh(jGeo, frameMat);
+            jamb.position.set(jx, floorY + doorH / 2, jz);
+            houseGroup.add(jamb);
+          });
+
+          if (isGarageDoor) {
+            // Horizontal sectional garage ribs
+            for (let r = 0.5; r < doorH - 0.2; r += 0.55) {
+              const [rx, rz] = getWorldCoord(bayCenter, 0.09);
+              const ribGeo = isHorizontal
+                ? new THREE.BoxGeometry(bayW - 0.16, 0.04, 0.04)
+                : new THREE.BoxGeometry(0.04, 0.04, bayW - 0.16);
+              const rib = new THREE.Mesh(ribGeo, frameMat);
+              rib.position.set(rx, floorY + r, rz);
+              houseGroup.add(rib);
+            }
+          } else {
+            // Brass door handle & center split line + entrance steps on ground floor
+            const [hx, hz] = getWorldCoord(bayCenter + (bayW > 1.1 ? 0.14 : bayW * 0.25), 0.11);
+            const handle = new THREE.Mesh(
+              new THREE.BoxGeometry(0.05, 0.38, 0.05),
+              new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.15 })
+            );
+            handle.position.set(hx, floorY + 1.1, hz);
+            houseGroup.add(handle);
+
+            if (floorIdx === 0) {
+              // Entrance Canopy & Granite Steps
+              const [cxOut, czOut] = getWorldCoord(bayCenter, 0.68);
+              const canopyGeo = isHorizontal
+                ? new THREE.BoxGeometry(bayW + 1.1, 0.16, 1.35)
+                : new THREE.BoxGeometry(1.35, 0.16, bayW + 1.1);
+              const canopy = new THREE.Mesh(canopyGeo, accentMat);
+              canopy.position.set(cxOut, floorY + doorH + 0.18, czOut);
+              canopy.castShadow = true;
+              houseGroup.add(canopy);
+
+              const [stX, stZ] = getWorldCoord(bayCenter, 0.55);
+              const stepGeo = isHorizontal
+                ? new THREE.BoxGeometry(bayW + 0.6, 0.16, 0.9)
+                : new THREE.BoxGeometry(0.9, 0.16, bayW + 0.6);
+              const stepMesh = new THREE.Mesh(stepGeo, slabMat);
+              stepMesh.position.set(stX, 0.08, stZ);
+              stepMesh.receiveShadow = true;
+              houseGroup.add(stepMesh);
+            }
           }
         } else {
-          // Window Opening: sill below + lintel above + framed glass + style mullions/mashrabiya!
+          // Window Opening: sill below + lintel above + recessed glass + crisp protruding 4-side frame
           const sillH = 0.85;
-          const winTop = 2.55;
+          const winTop = 2.6;
           const winH = winTop - sillH;
 
           placeSegment(bayCenter, bayW, sillH, floorY + sillH / 2, wallMat);
           placeSegment(bayCenter, bayW, wallHeight - winTop, floorY + winTop + (wallHeight - winTop) / 2, wallMat);
 
-          const [wx, wz] = getWorldCoord(bayCenter, 0);
-          // Glass sheet
+          const [wx, wz] = getWorldCoord(bayCenter, 0.01);
+          // High-contrast reflective architectural glass sheet
           const gGeo = isHorizontal
-            ? new THREE.BoxGeometry(bayW - 0.1, winH - 0.1, 0.04)
-            : new THREE.BoxGeometry(0.04, winH - 0.1, bayW - 0.1);
+            ? new THREE.BoxGeometry(bayW - 0.1, winH - 0.1, 0.05)
+            : new THREE.BoxGeometry(0.05, winH - 0.1, bayW - 0.1);
           const gMesh = new THREE.Mesh(gGeo, glassMat);
           gMesh.position.set(wx, floorY + sillH + winH / 2, wz);
           houseGroup.add(gMesh);
 
-          // Top, bottom, center mullion frames
-          const frameBarThick = 0.06;
+          // 4-sided window perimeter frame + protruding stone sill
+          const frameBarThick = 0.07;
+          const [fx, fz] = getWorldCoord(bayCenter, 0.04);
           const topBarGeo = isHorizontal
-            ? new THREE.BoxGeometry(bayW, frameBarThick, 0.12)
-            : new THREE.BoxGeometry(0.12, frameBarThick, bayW);
+            ? new THREE.BoxGeometry(bayW + 0.06, frameBarThick, 0.28)
+            : new THREE.BoxGeometry(0.28, frameBarThick, bayW + 0.06);
           const topBar = new THREE.Mesh(topBarGeo, frameMat);
-          topBar.position.set(wx, floorY + winTop - frameBarThick / 2, wz);
+          topBar.position.set(fx, floorY + winTop - frameBarThick / 2, fz);
           houseGroup.add(topBar);
 
-          const botBar = new THREE.Mesh(topBarGeo, accentMat);
+          const sillGeo = isHorizontal
+            ? new THREE.BoxGeometry(bayW + 0.12, 0.08, 0.34)
+            : new THREE.BoxGeometry(0.34, 0.08, bayW + 0.12);
+          const botBar = new THREE.Mesh(sillGeo, accentMat);
           const [sxOut, szOut] = getWorldCoord(bayCenter, 0.06);
           botBar.position.set(sxOut, floorY + sillH, szOut);
           houseGroup.add(botBar);
 
+          [-bayW / 2 + 0.035, bayW / 2 - 0.035].forEach((jOff) => {
+            const [jx, jz] = getWorldCoord(bayCenter + jOff, 0.04);
+            const sideGeo = isHorizontal
+              ? new THREE.BoxGeometry(0.07, winH, 0.28)
+              : new THREE.BoxGeometry(0.28, winH, 0.07);
+            const sideJamb = new THREE.Mesh(sideGeo, frameMat);
+            sideJamb.position.set(jx, floorY + sillH + winH / 2, jz);
+            houseGroup.add(sideJamb);
+          });
+
+          // Center mullion
           const mulGeo = isHorizontal
-            ? new THREE.BoxGeometry(0.05, winH, 0.1)
-            : new THREE.BoxGeometry(0.1, winH, 0.05);
+            ? new THREE.BoxGeometry(0.06, winH, 0.14)
+            : new THREE.BoxGeometry(0.14, winH, 0.06);
           const mul = new THREE.Mesh(mulGeo, frameMat);
-          mul.position.set(wx, floorY + sillH + winH / 2, wz);
+          mul.position.set(fx, floorY + sillH + winH / 2, fz);
           houseGroup.add(mul);
 
           // Traditional / Andalusian Mashrabiya Lattice Louvers
           if (style === 'traditional' || style === 'andalusian') {
             const [mx, mz] = getWorldCoord(bayCenter, 0.14);
             for (let b = -2; b <= 2; b++) {
-              const barGeo = isHorizontal
-                ? new THREE.BoxGeometry(0.04, winH * 0.9, 0.04)
-                : new THREE.BoxGeometry(0.04, winH * 0.9, 0.04);
+              const barGeo = new THREE.BoxGeometry(0.04, winH * 0.9, 0.04);
               const bar = new THREE.Mesh(barGeo, doorMat);
               if (isHorizontal) bar.position.set(mx + b * (bayW * 0.18), floorY + sillH + winH / 2, mz);
               else bar.position.set(mx, floorY + sillH + winH / 2, mz + b * (bayW * 0.18));
@@ -813,8 +954,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
       }
 
       // Final solid wall pier
-      if (wallPos < span / 2) {
-        placeSegment((wallPos + span / 2) / 2, span / 2 - wallPos, wallHeight, floorY + wallHeight / 2, wallMat);
+      if (wallPos < wallEnd) {
+        placeSegment((wallPos + wallEnd) / 2, wallEnd - wallPos, wallHeight, floorY + wallHeight / 2, wallMat);
       }
     };
 
@@ -824,20 +965,20 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
 
       const floorY = f * wallHeight;
 
-      // Floor Concrete Slab
-      const slabMesh = new THREE.Mesh(new THREE.BoxGeometry(L + 0.1, 0.22, W + 0.1), slabMat);
-      slabMesh.position.set(0, floorY + 0.11, 0);
+      // Floor Concrete Slab matched to actual building footprint
+      const slabMesh = new THREE.Mesh(new THREE.BoxGeometry(bL + 0.1, 0.22, bW + 0.1), slabMat);
+      slabMesh.position.set(bCx, floorY + 0.11, bCz);
       slabMesh.receiveShadow = true;
       slabMesh.castShadow = true;
       houseGroup.add(slabMesh);
 
-      // Modern & Luxury floor slab cantilever eyebrows on open facades
+      // Modern & Luxury floor slab cantilever eyebrows on open front facade
       if ((style === 'modern' || style === 'luxury' || style === 'minimalist') && hasFront && viewMode !== 'structural') {
         const browMesh = new THREE.Mesh(
-          new THREE.BoxGeometry(L + 0.6, 0.14, 0.55),
+          new THREE.BoxGeometry(bL + 0.5, 0.14, 0.55),
           style === 'luxury' ? accentMat : slabMat
         );
-        browMesh.position.set(0, floorY + wallHeight - 0.07, W / 2 + 0.25);
+        browMesh.position.set(bCx, floorY + wallHeight - 0.07, frontZ + 0.25);
         browMesh.castShadow = true;
         houseGroup.add(browMesh);
       }
@@ -1004,7 +1145,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         houseGroup.add(water);
       }
 
-      // Build Exterior Walls Strictly Obeying openFacadeDirections!
+      // Build Exterior Walls Strictly Obeying openFacadeDirections & Building Footprint!
       if (viewMode !== 'structural') {
         const thick = 0.25;
 
@@ -1012,8 +1153,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         if (hasFront) {
           buildOpenExteriorWall('front', f, floorY);
         } else {
-          const fBlind = new THREE.Mesh(new THREE.BoxGeometry(L, wallHeight, thick), blindPartyWallMat);
-          fBlind.position.set(0, floorY + wallHeight / 2, W / 2 - thick / 2);
+          const fBlind = new THREE.Mesh(new THREE.BoxGeometry(bL, wallHeight, thick), blindPartyWallMat);
+          fBlind.position.set(bCx, floorY + wallHeight / 2, frontZ - thick / 2);
           fBlind.castShadow = true;
           houseGroup.add(fBlind);
         }
@@ -1022,8 +1163,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         if (hasBack) {
           buildOpenExteriorWall('back', f, floorY);
         } else {
-          const bBlind = new THREE.Mesh(new THREE.BoxGeometry(L, wallHeight, thick), blindPartyWallMat);
-          bBlind.position.set(0, floorY + wallHeight / 2, -W / 2 + thick / 2);
+          const bBlind = new THREE.Mesh(new THREE.BoxGeometry(bL, wallHeight, thick), blindPartyWallMat);
+          bBlind.position.set(bCx, floorY + wallHeight / 2, backZ + thick / 2);
           bBlind.castShadow = true;
           houseGroup.add(bBlind);
         }
@@ -1032,8 +1173,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         if (hasLeft) {
           buildOpenExteriorWall('left', f, floorY);
         } else {
-          const lBlind = new THREE.Mesh(new THREE.BoxGeometry(thick, wallHeight, W - thick * 2), blindPartyWallMat);
-          lBlind.position.set(-L / 2 + thick / 2, floorY + wallHeight / 2, 0);
+          const lBlind = new THREE.Mesh(new THREE.BoxGeometry(thick, wallHeight, bW - thick * 2), blindPartyWallMat);
+          lBlind.position.set(leftX + thick / 2, floorY + wallHeight / 2, bCz);
           lBlind.castShadow = true;
           houseGroup.add(lBlind);
         }
@@ -1042,8 +1183,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         if (hasRight) {
           buildOpenExteriorWall('right', f, floorY);
         } else {
-          const rBlind = new THREE.Mesh(new THREE.BoxGeometry(thick, wallHeight, W - thick * 2), blindPartyWallMat);
-          rBlind.position.set(L / 2 - thick / 2, floorY + wallHeight / 2, 0);
+          const rBlind = new THREE.Mesh(new THREE.BoxGeometry(thick, wallHeight, bW - thick * 2), blindPartyWallMat);
+          rBlind.position.set(rightX - thick / 2, floorY + wallHeight / 2, bCz);
           rBlind.castShadow = true;
           houseGroup.add(rBlind);
         }
@@ -1053,8 +1194,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           if (f === 0) {
             if (style === 'algerian' || style === 'andalusian') {
               // Horseshoe Arches Arcade + Zellige Frieze
-              const archSpan = 1.25;
-              const archXs = [-1.35, 0, 1.35];
+              const archSpan = Math.min(1.25, bL * 0.14);
+              const archXs = [bCx - archSpan * 1.1, bCx, bCx + archSpan * 1.1];
               const colMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.25 });
               const archMat = new THREE.MeshStandardMaterial({
                 color: style === 'algerian' ? 0xb91c1c : 0x047857,
@@ -1062,73 +1203,70 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
               });
               archXs.forEach((ax) => {
                 const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 2.3, 12), colMat);
-                p1.position.set(ax - archSpan / 2, 1.15, W / 2 + 0.9);
+                p1.position.set(ax - archSpan / 2, 1.15, frontZ + 0.85);
                 p1.castShadow = true;
                 houseGroup.add(p1);
 
                 const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 2.3, 12), colMat);
-                p2.position.set(ax + archSpan / 2, 1.15, W / 2 + 0.9);
+                p2.position.set(ax + archSpan / 2, 1.15, frontZ + 0.85);
                 p2.castShadow = true;
                 houseGroup.add(p2);
 
                 const torus = new THREE.Mesh(new THREE.TorusGeometry(archSpan / 2, 0.085, 12, 24, Math.PI), archMat);
-                torus.position.set(ax, 2.3, W / 2 + 0.9);
+                torus.position.set(ax, 2.3, frontZ + 0.85);
                 houseGroup.add(torus);
               });
 
               const zelligeFrieze = new THREE.Mesh(
-                new THREE.BoxGeometry(4.2, 0.34, 0.18),
+                new THREE.BoxGeometry(Math.min(4.2, bL * 0.55), 0.34, 0.18),
                 new THREE.MeshStandardMaterial({ map: tex.zelligeMosaic, roughness: 0.25 })
               );
-              zelligeFrieze.position.set(0, 3.0, W / 2 + 0.9);
+              zelligeFrieze.position.set(bCx, 3.0, frontZ + 0.85);
               houseGroup.add(zelligeFrieze);
             } else if (style === 'classic') {
-              // Classical Fluted Columns Portico & Triangular Pediment
               const classicColMat = new THREE.MeshStandardMaterial({ color: 0xfbf8f2, roughness: 0.18 });
-              [-1.7, -0.6, 0.6, 1.7].forEach((cxPos) => {
+              [-1.6, -0.55, 0.55, 1.6].forEach((cxPos) => {
                 const col = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 2.75, 16), classicColMat);
-                col.position.set(cxPos, 1.38, W / 2 + 0.95);
+                col.position.set(bCx + cxPos, 1.38, frontZ + 0.9);
                 col.castShadow = true;
                 houseGroup.add(col);
               });
 
               const pedShape = new THREE.Shape();
-              pedShape.moveTo(-2.1, 0);
-              pedShape.lineTo(2.1, 0);
-              pedShape.lineTo(0, 1.0);
+              pedShape.moveTo(-2.0, 0);
+              pedShape.lineTo(2.0, 0);
+              pedShape.lineTo(0, 0.95);
               pedShape.closePath();
               const pedMesh = new THREE.Mesh(
                 new THREE.ExtrudeGeometry(pedShape, { depth: 0.28, bevelEnabled: false }),
                 classicColMat
               );
-              pedMesh.position.set(0, 2.75, W / 2 + 0.82);
+              pedMesh.position.set(bCx, 2.75, frontZ + 0.78);
               pedMesh.castShadow = true;
               houseGroup.add(pedMesh);
             } else if (style === 'mediterranean') {
-              // Timber Pergola Beams
               for (let b = -2; b <= 2; b++) {
-                const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 1.5), doorMat);
-                beam.position.set(b * 0.72, 2.68, W / 2 + 0.75);
+                const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 1.4), doorMat);
+                beam.position.set(bCx + b * 0.7, 2.68, frontZ + 0.7);
                 beam.castShadow = true;
                 houseGroup.add(beam);
               }
             } else if (style === 'luxury') {
-              // Monumental Dark Basalt Portal + Recessed Gold Strip
               const portal = new THREE.Mesh(
-                new THREE.BoxGeometry(2.8, wallHeight * floorsCount + 0.4, 0.26),
+                new THREE.BoxGeometry(2.4, wallHeight * floorsCount + 0.35, 0.24),
                 new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.18, metalness: 0.45 })
               );
-              portal.position.set(-L * 0.16, (wallHeight * floorsCount) / 2 + 0.2, W / 2 + 0.08);
+              portal.position.set(bCx - bL * 0.18, (wallHeight * floorsCount) / 2 + 0.18, frontZ + 0.08);
               portal.castShadow = true;
               houseGroup.add(portal);
             }
           }
 
-          // Vertical Wood Louver Fins for Modern / Luxury Styles
+          // Vertical Wood Louver Fins placed on corner pier (never blocking windows!)
           if (style === 'modern' || style === 'luxury') {
-            for (let lv = 0; lv < 5; lv++) {
-              const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, wallHeight * 0.94, 0.22), accentMat);
-              fin.position.set(L * 0.28 + lv * 0.24, floorY + wallHeight / 2, W / 2 + 0.08);
+            for (let lv = 0; lv < 4; lv++) {
+              const fin = new THREE.Mesh(new THREE.BoxGeometry(0.07, wallHeight * 0.94, 0.18), accentMat);
+              fin.position.set(rightX - 0.95 + lv * 0.2, floorY + wallHeight / 2, frontZ + 0.06);
               fin.castShadow = true;
               houseGroup.add(fin);
             }
@@ -1145,8 +1283,8 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             ? 'right'
             : 'back';
 
-          const balDepth = 1.5;
-          const balW = (balDir === 'front' || balDir === 'back' ? L : W) * 0.46;
+          const balDepth = 1.4;
+          const balW = (balDir === 'front' || balDir === 'back' ? bL : bW) * 0.44;
           const isHorizBal = balDir === 'front' || balDir === 'back';
 
           const bSlabGeo = isHorizBal
@@ -1160,17 +1298,17 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           const bRail = new THREE.Mesh(bRailGeo, glassMat);
 
           if (balDir === 'front') {
-            bSlab.position.set(0, floorY + 0.09, W / 2 + balDepth / 2);
-            bRail.position.set(0, floorY + 0.62, W / 2 + balDepth - 0.05);
+            bSlab.position.set(bCx, floorY + 0.09, frontZ + balDepth / 2);
+            bRail.position.set(bCx, floorY + 0.62, frontZ + balDepth - 0.05);
           } else if (balDir === 'back') {
-            bSlab.position.set(0, floorY + 0.09, -W / 2 - balDepth / 2);
-            bRail.position.set(0, floorY + 0.62, -W / 2 - balDepth + 0.05);
+            bSlab.position.set(bCx, floorY + 0.09, backZ - balDepth / 2);
+            bRail.position.set(bCx, floorY + 0.62, backZ - balDepth + 0.05);
           } else if (balDir === 'left') {
-            bSlab.position.set(-L / 2 - balDepth / 2, floorY + 0.09, 0);
-            bRail.position.set(-L / 2 - balDepth + 0.05, floorY + 0.62, 0);
+            bSlab.position.set(leftX - balDepth / 2, floorY + 0.09, bCz);
+            bRail.position.set(leftX - balDepth + 0.05, floorY + 0.62, bCz);
           } else {
-            bSlab.position.set(L / 2 + balDepth / 2, floorY + 0.09, 0);
-            bRail.position.set(L / 2 + balDepth - 0.05, floorY + 0.62, 0);
+            bSlab.position.set(rightX + balDepth / 2, floorY + 0.09, bCz);
+            bRail.position.set(rightX + balDepth - 0.05, floorY + 0.62, bCz);
           }
           bSlab.castShadow = true;
           houseGroup.add(bSlab);
@@ -1205,6 +1343,20 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         pWall.receiveShadow = true;
         houseGroup.add(pWall);
       });
+
+      // Interior 3D Wooden Doors so room-to-room entries are clearly rendered inside the house
+      const interiorDoors = plan.openings.filter((op) => op.floor === f && op.id?.startsWith('op-int-'));
+      interiorDoors.forEach((op) => {
+        const isVert = op.rotation === 90 || op.rotation === 270;
+        const dx = op.x - cx + (isVert ? 0 : op.width / 2);
+        const dz = op.y - cz + (isVert ? op.width / 2 : 0);
+        const iDoorGeo = isVert
+          ? new THREE.BoxGeometry(0.22, 2.25, op.width)
+          : new THREE.BoxGeometry(op.width, 2.25, 0.22);
+        const iDoor = new THREE.Mesh(iDoorGeo, doorMat);
+        iDoor.position.set(dx, floorY + 1.125, dz);
+        houseGroup.add(iDoor);
+      });
     }
 
     // Structural Columns
@@ -1236,38 +1388,37 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
       });
 
       if (hasFront) {
-        [-L * 0.24, L * 0.24].forEach((lx) => {
+        [bCx - bL * 0.24, bCx + bL * 0.24].forEach((lx) => {
           const pt = new THREE.PointLight(sconceColor, 2.8, 12);
-          pt.position.set(lx, wallHeight * 0.82, W / 2 + 0.7);
+          pt.position.set(lx, wallHeight * 0.82, frontZ + 0.7);
           houseGroup.add(pt);
 
           const sconce = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.32, 0.12), sconceMat);
-          sconce.position.set(lx, wallHeight * 0.82, W / 2 + 0.08);
+          sconce.position.set(lx, wallHeight * 0.82, frontZ + 0.08);
           houseGroup.add(sconce);
         });
 
-        // Subtle LED Strip under front cornice
         const ledStrip = new THREE.Mesh(
-          new THREE.BoxGeometry(L * 0.88, 0.04, 0.05),
+          new THREE.BoxGeometry(bL * 0.88, 0.04, 0.05),
           sconceMat
         );
-        ledStrip.position.set(0, wallHeight * floorsCount - 0.08, W / 2 + 0.12);
+        ledStrip.position.set(bCx, wallHeight * floorsCount - 0.08, frontZ + 0.12);
         houseGroup.add(ledStrip);
       }
 
       if (hasLeft) {
         const ptL = new THREE.PointLight(sconceColor, 2.2, 10);
-        ptL.position.set(-L / 2 - 0.7, wallHeight * 0.8, 0);
+        ptL.position.set(leftX - 0.7, wallHeight * 0.8, bCz);
         houseGroup.add(ptL);
       }
       if (hasRight) {
         const ptR = new THREE.PointLight(sconceColor, 2.2, 10);
-        ptR.position.set(L / 2 + 0.7, wallHeight * 0.8, 0);
+        ptR.position.set(rightX + 0.7, wallHeight * 0.8, bCz);
         houseGroup.add(ptR);
       }
     }
 
-    // Architectural Roof Rendering
+    // Architectural Roof Rendering aligned to building footprint
     if (showRoof && selectedFloor3D === 'all') {
       const topY = wallHeight * floorsCount;
 
@@ -1277,25 +1428,24 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
         style === 'andalusian' ||
         style === 'mediterranean'
       ) {
-        const roofH = Math.min(3.4, Math.max(2.0, Math.min(L, W) * 0.3));
-        const roofGeo = new THREE.ConeGeometry(Math.hypot(L, W) * 0.53 + 0.45, roofH, 4);
+        const roofH = Math.min(3.4, Math.max(2.0, Math.min(bL, bW) * 0.3));
+        const roofGeo = new THREE.ConeGeometry(Math.hypot(bL, bW) * 0.53 + 0.45, roofH, 4);
         const roofMat = new THREE.MeshStandardMaterial({
           map: tex.roofTiles,
           roughness: 0.48,
           metalness: 0.08,
         });
         const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-        roofMesh.position.set(0, topY + roofH / 2, 0);
+        roofMesh.position.set(bCx, topY + roofH / 2, bCz);
         roofMesh.rotation.y = Math.PI / 4;
         roofMesh.castShadow = true;
         houseGroup.add(roofMesh);
 
-        // Ridge Cap
         const ridge = new THREE.Mesh(
-          new THREE.BoxGeometry(0.24, 0.18, Math.max(L, W) * 0.42),
+          new THREE.BoxGeometry(0.24, 0.18, Math.max(bL, bW) * 0.42),
           new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35 })
         );
-        ridge.position.set(0, topY + roofH + 0.04, 0);
+        ridge.position.set(bCx, topY + roofH + 0.04, bCz);
         houseGroup.add(ridge);
 
         if (style === 'andalusian') {
@@ -1303,7 +1453,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             new THREE.SphereGeometry(1.45, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2),
             new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.22, metalness: 0.15 })
           );
-          dome.position.set(0, topY + roofH * 0.55, 0);
+          dome.position.set(bCx, topY + roofH * 0.55, bCz);
           dome.castShadow = true;
           houseGroup.add(dome);
 
@@ -1311,16 +1461,15 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             new THREE.CylinderGeometry(0.04, 0.08, 0.85, 8),
             new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.9, roughness: 0.12 })
           );
-          finial.position.set(0, topY + roofH * 0.55 + 1.6, 0);
+          finial.position.set(bCx, topY + roofH * 0.55 + 1.6, bCz);
           houseGroup.add(finial);
         }
       } else {
-        // Flat Roof Slab + Parapet + Stair Penthouse
         const roofSlab = new THREE.Mesh(
-          new THREE.BoxGeometry(L + 0.35, 0.24, W + 0.35),
+          new THREE.BoxGeometry(bL + 0.35, 0.24, bW + 0.35),
           new THREE.MeshStandardMaterial({ color: 0x334155, map: tex.paverTiles, roughness: 0.6 })
         );
-        roofSlab.position.set(0, topY + 0.12, 0);
+        roofSlab.position.set(bCx, topY + 0.12, bCz);
         roofSlab.castShadow = true;
         houseGroup.add(roofSlab);
 
@@ -1334,19 +1483,19 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           m.castShadow = true;
           houseGroup.add(m);
         };
-        addParapet(L + 0.35, pThick, 0, (W + 0.35) / 2 - pThick / 2);
-        addParapet(L + 0.35, pThick, 0, -(W + 0.35) / 2 + pThick / 2);
-        addParapet(pThick, W + 0.35, -(L + 0.35) / 2 + pThick / 2, 0);
-        addParapet(pThick, W + 0.35, (L + 0.35) / 2 - pThick / 2, 0);
+        addParapet(bL + 0.35, pThick, bCx, frontZ + 0.175 - pThick / 2);
+        addParapet(bL + 0.35, pThick, bCx, backZ - 0.175 + pThick / 2);
+        addParapet(pThick, bW + 0.35, leftX - 0.175 + pThick / 2, bCz);
+        addParapet(pThick, bW + 0.35, rightX + 0.175 - pThick / 2, bCz);
 
         if (hasStairs) {
-          const bhMesh = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.25, 3.4), wallMat);
-          bhMesh.position.set(L * 0.1, topY + 0.24 + 1.125, W * 0.04);
+          const bhMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, 3.0), wallMat);
+          bhMesh.position.set(bCx + bL * 0.08, topY + 0.24 + 1.1, bCz);
           bhMesh.castShadow = true;
           houseGroup.add(bhMesh);
 
           const rDoor = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.9, 0.08), frameMat);
-          rDoor.position.set(L * 0.1, topY + 0.24 + 0.95, W * 0.04 + 1.72);
+          rDoor.position.set(bCx + bL * 0.08, topY + 0.24 + 0.95, bCz + 1.52);
           houseGroup.add(rDoor);
         }
       }
@@ -1544,9 +1693,9 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl space-y-4 w-full min-w-0 overflow-hidden">
       {/* Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowRoof(!showRoof)}
@@ -1560,7 +1709,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
             <span>{showRoof ? 'السقف (ظاهر)' : 'السقف (مخفي لكشف الداخل)'}</span>
           </button>
 
-          <div className="flex items-center bg-slate-950 p-1 rounded-xl text-xs font-semibold border border-slate-800">
+          <div className="flex flex-wrap items-center bg-slate-950 p-1 rounded-xl text-xs font-semibold border border-slate-800">
             <button
               onClick={() => setSelectedFloor3D('all')}
               className={`px-2.5 py-1 rounded-lg transition-all ${selectedFloor3D === 'all' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
@@ -1579,7 +1728,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <button
             onClick={() => setViewMode(viewMode === 'night' ? 'realistic' : 'night')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all font-bold ${
@@ -1616,7 +1765,7 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
 
       {/* 3D Canvas Viewport */}
       <div className="relative w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner">
-        <div ref={containerRef} className="w-full h-[380px] sm:h-[480px] md:h-[540px] lg:h-[580px] cursor-grab active:cursor-grabbing touch-none" />
+        <div ref={containerRef} className="w-full h-[380px] sm:h-[480px] md:h-[540px] lg:h-[600px] cursor-grab active:cursor-grabbing touch-none" />
 
         {contextLost && (
           <div className="absolute inset-0 bg-slate-950/85 flex items-center justify-center text-xs text-amber-300 font-bold z-20">
@@ -1655,28 +1804,28 @@ export const House3DViewer: React.FC<House3DViewerProps> = ({ plan }) => {
           </button>
         </div>
 
-        <div className="absolute top-3 right-3 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 flex items-center gap-1 z-10 text-[11px] font-semibold text-slate-300">
-          <span className="px-1.5 text-slate-500 hidden sm:inline">منظور الواجهة:</span>
-          <button onClick={() => setCameraAngle('front')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all">
+        <div className="absolute top-3 right-3 max-w-[calc(100%-70px)] overflow-x-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-1 flex items-center gap-1 z-10 text-[11px] font-semibold text-slate-300">
+          <span className="px-1.5 text-slate-500 hidden sm:inline shrink-0">منظور الواجهة:</span>
+          <button onClick={() => setCameraAngle('front')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all shrink-0">
             أمامية
           </button>
-          <button onClick={() => setCameraAngle('back')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all">
+          <button onClick={() => setCameraAngle('back')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all shrink-0">
             خلفية
           </button>
-          <button onClick={() => setCameraAngle('right')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all">
+          <button onClick={() => setCameraAngle('right')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all shrink-0">
             يمين
           </button>
-          <button onClick={() => setCameraAngle('left')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all">
+          <button onClick={() => setCameraAngle('left')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all shrink-0">
             يسار
           </button>
-          <button onClick={() => setCameraAngle('top')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all">
+          <button onClick={() => setCameraAngle('top')} className="px-2 py-1 rounded-lg hover:bg-slate-800 hover:text-white transition-all shrink-0">
             علوي
           </button>
         </div>
 
-        <div className="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 px-3 text-[11px] text-slate-200 flex items-center gap-2 pointer-events-none shadow-xl">
-          <Rotate3D className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
-          <span>اسحب للتدوير 360° • قرّب بالأصابع أو بعجلة الفأرة</span>
+        <div className="absolute bottom-3 right-3 max-w-[calc(100%-24px)] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 px-3 text-[11px] text-slate-200 flex items-center gap-2 pointer-events-none shadow-xl">
+          <Rotate3D className="w-4 h-4 text-cyan-400 animate-spin shrink-0" style={{ animationDuration: '6s' }} />
+          <span className="truncate">اسحب للتدوير 360° • قرّب بالأصابع أو بعجلة الفأرة</span>
         </div>
       </div>
     </div>

@@ -80,14 +80,14 @@ export const InputForm: React.FC<InputFormProps> = ({
   };
 
   return (
-    <aside className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-2xl backdrop-blur-xl text-slate-100 space-y-6">
+    <aside className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl text-slate-100 space-y-6 w-full min-w-0">
       {/* Title & Presets Header */}
-      <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-800">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0">
             <Wand2 className="w-5 h-5 text-cyan-400" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-base font-bold text-white tracking-tight">أبعاد ومتطلبات البناء</h2>
             <p className="text-[11px] text-slate-400">حدد مقاسات الأرض والغرف لتوليد الخريطة والنموذج 3D</p>
           </div>
@@ -105,7 +105,7 @@ export const InputForm: React.FC<InputFormProps> = ({
           </button>
 
           {showPresets && (
-            <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2 space-y-1 backdrop-blur-2xl">
+            <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-2.5rem)] bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2 space-y-1 backdrop-blur-2xl">
               <div className="text-[11px] font-bold text-slate-400 px-2 py-1">اختر نموذجاً صُمم هندسياً:</div>
               {PRESET_EXAMPLES.map((item, idx) => (
                 <button
@@ -319,7 +319,7 @@ export const InputForm: React.FC<InputFormProps> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-4 gap-1.5 pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1">
             {(
               [
                 { id: 'front', label: 'الأمامية (الشارع)' },

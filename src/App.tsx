@@ -155,7 +155,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 font-sans dir-rtl antialiased flex flex-col selection:bg-cyan-500 selection:text-slate-950">
+    <div className="min-h-screen w-full overflow-x-hidden bg-[#020617] text-slate-100 font-sans antialiased flex flex-col selection:bg-cyan-500 selection:text-slate-950">
       {/* Background ambient lighting */}
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(6,182,212,0.15),rgba(255,255,255,0))] pointer-events-none" />
 
@@ -169,7 +169,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8 relative z-10">
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-2.5 py-4 sm:p-6 lg:p-8 space-y-6 relative z-10 min-w-0">
         {/* Error Alert if any */}
         {errorMsg && (
           <div className="bg-rose-950/60 border border-rose-500/40 rounded-2xl p-4 text-rose-300 text-xs flex items-center justify-between gap-3 shadow-lg backdrop-blur-md">
@@ -182,9 +182,9 @@ export default function App() {
         )}
 
         {/* Two Column Layout: Inputs on Left, Visual Studio on Right */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start w-full min-w-0">
           {/* Column 1: Input Controls (5 cols) */}
-          <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-20">
+          <div className="lg:col-span-5 min-w-0 w-full space-y-6 lg:sticky lg:top-20">
             <InputForm
               params={params}
               setParams={setParams}
@@ -194,7 +194,7 @@ export default function App() {
           </div>
 
           {/* Column 2: Interactive Architectural Studio (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-7 min-w-0 w-full space-y-6">
             {/* Real AI Generation Status Banner */}
             {aiSuccessBadge && (
               <div className="bg-gradient-to-r from-cyan-950/90 via-slate-900/90 to-blue-950/90 border border-cyan-500/50 rounded-2xl p-3 text-xs text-cyan-200 flex items-center justify-between gap-3 shadow-xl backdrop-blur-xl">
@@ -244,14 +244,14 @@ export default function App() {
             )}
 
             {/* AI Generated Multi-Options Toolbar */}
-            <div className="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur-xl space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+            <div className="bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-3.5 sm:p-4 shadow-2xl backdrop-blur-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-800 pb-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
                     <Sparkles className="w-4 h-4 animate-pulse text-amber-300" />
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-bold text-white flex flex-wrap items-center gap-1.5">
                       <span>خيارات التوليد المعماري ({generatedPlans.length} نماذج مقترحة)</span>
                       <span className="bg-cyan-950 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full border border-cyan-500/30">
                         {currentPlan.source === 'gemini' ? 'Gemini AI مُولّد' : 'توزيع هندسي ذكي'}
@@ -261,7 +261,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     onClick={handleGenerateAlternative}
                     disabled={isGenerating}
@@ -431,8 +431,8 @@ export default function App() {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 mt-auto bg-[#020617]/90 relative z-10">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <footer className="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 mt-auto bg-[#020617]/90 relative z-10 w-full">
+        <div className="max-w-[1600px] mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-slate-400 font-medium">
             ARCH-AI PRO — نظام تصميم وتوليد المخططات المعمارية والنماذج ثلاثية الأبعاد
           </div>
