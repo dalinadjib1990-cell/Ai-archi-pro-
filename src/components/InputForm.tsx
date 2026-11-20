@@ -290,10 +290,10 @@ export const InputForm: React.FC<InputFormProps> = ({
         </div>
 
         {/* Facades count & Directional Selector */}
-        <div className="space-y-2">
-          <label className="text-xs text-slate-400 font-medium uppercase tracking-wider block flex items-center justify-between">
-            <span>عدد الاتجاهات والواجهات المفتوحة</span>
-            <span className="text-[10px] text-cyan-400 font-normal">إلغاء النوافذ بالجهات الجارية الملاصقة</span>
+        <div className="space-y-2.5 bg-slate-950/50 border border-slate-800/80 rounded-2xl p-3">
+          <label className="text-xs text-slate-300 font-semibold flex items-center justify-between">
+            <span>عدد الواجهات المفتوحة واتجاهاتها</span>
+            <span className="text-[10px] text-cyan-400 font-normal">الجدران المغلقة تبقى صماء بدون نوافذ</span>
           </label>
 
           <div className="grid grid-cols-4 gap-1.5">
@@ -314,9 +314,49 @@ export const InputForm: React.FC<InputFormProps> = ({
                     : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:bg-slate-800'
                 }`}
               >
-                {f === 1 ? 'واجهة' : f === 2 ? 'واجهتان' : f === 3 ? '3 واجهات' : '4 واجهات'}
+                {f === 1 ? 'واجهة 1' : f === 2 ? 'واجهتان' : f === 3 ? '3 واجهات' : '4 واجهات'}
               </button>
             ))}
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5 pt-1">
+            {(
+              [
+                { id: 'front', label: 'الأمامية (الشارع)' },
+                { id: 'back', label: 'الخلفية' },
+                { id: 'left', label: 'اليسرى' },
+                { id: 'right', label: 'اليمنى' }
+              ] as const
+            ).map((dir) => {
+              const activeDirs = params.openFacadeDirections || ['front', 'left'];
+              const isOpen = activeDirs.includes(dir.id);
+              return (
+                <button
+                  key={dir.id}
+                  type="button"
+                  onClick={() => {
+                    if (dir.id === 'front') return; // Front street entrance remains open
+                    const nextDirs = isOpen
+                      ? activeDirs.filter((d) => d !== dir.id)
+                      : [...activeDirs, dir.id];
+                    setParams({
+                      ...params,
+                      openFacadeDirections: nextDirs,
+                      facadesCount: nextDirs.length
+                    });
+                  }}
+                  className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
+                    isOpen
+                      ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-500 line-through decoration-slate-600'
+                  } ${dir.id === 'front' ? 'cursor-default' : 'cursor-pointer hover:border-slate-600'}`}
+                  title={isOpen ? 'واجهة مفتوحة بإضاءة ونوافذ' : 'جدار جار أصم بدون نوافذ'}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                  <span>{dir.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

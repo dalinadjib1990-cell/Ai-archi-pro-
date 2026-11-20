@@ -7,8 +7,11 @@ import {
   OpeningData,
   FurnitureData,
   ArchitecturalStyle,
-  RoofType
+  RoofType,
+  FacadeImageData
 } from '../types';
+
+export type FacadeDirection = 'front' | 'back' | 'right' | 'left';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -21,6 +24,37 @@ export interface ValidationResult {
 }
 
 /**
+ * Normalizes openFacadeDirections so it always matches facadesCount
+ * and guarantees at least the main street facade ('front') is open.
+ */
+export function normalizeOpenFacades(params: HouseInputParams): FacadeDirection[] {
+  const count = Math.max(1, Math.min(4, Number(params.facadesCount) || 2));
+  const allOrder: FacadeDirection[] = ['front', 'left', 'back', 'right'];
+
+  const provided = Array.isArray(params.openFacadeDirections)
+    ? params.openFacadeDirections.filter((d): d is FacadeDirection =>
+        d === 'front' || d === 'back' || d === 'right' || d === 'left'
+      )
+    : [];
+
+  const unique: FacadeDirection[] = [];
+  if (provided.includes('front')) unique.push('front');
+  for (const dir of provided) {
+    if (!unique.includes(dir)) unique.push(dir);
+  }
+  if (!unique.includes('front')) {
+    unique.unshift('front');
+  }
+
+  for (const fallbackDir of allOrder) {
+    if (unique.length >= count) break;
+    if (!unique.includes(fallbackDir)) unique.push(fallbackDir);
+  }
+
+  return unique.slice(0, count);
+}
+
+/**
  * Validates whether user inputs can physically fit the requested rooms and spaces,
  * and suggests adjustments if there is an area deficit or contradiction.
  */
@@ -30,35 +64,26 @@ export function validateHouseInputs(params: HouseInputParams): ValidationResult 
   const floors = Math.max(1, Number(params.floorsCount) || 1);
   const lotArea = Number((L * W).toFixed(1));
 
-  // Minimum ergonomic area required per room type (in m²)
   const bedCount = Math.max(1, Number(params.bedroomsCount) || 3);
   const bathCount = Math.max(1, Number(params.bathroomsCount) || 2);
   const livingCount = Math.max(1, Number(params.livingRoomsCount) || 1);
   const kitchenCount = Math.max(1, Number(params.kitchensCount) || 1);
 
   let netRoomsArea = 0;
-  // Bedrooms: Master (~22m²) + other rooms (~13m² each)
-  netRoomsArea += 22 + (bedCount - 1) * 13;
-  // Living rooms: ~22m² each
-  netRoomsArea += livingCount * 22;
-  // Kitchens: ~12m² each
-  netRoomsArea += kitchenCount * 12;
-  // Bathrooms: ~4.5m² each
-  netRoomsArea += bathCount * 4.5;
+  netRoomsArea += 20 + (bedCount - 1) * 12;
+  netRoomsArea += livingCount * 20;
+  netRoomsArea += kitchenCount * 11;
+  netRoomsArea += bathCount * 4.2;
 
-  if (params.hasMajlis) netRoomsArea += 22;
-  if (params.hasGarage) netRoomsArea += (params.garageCapacity === 2 ? 32 : 18);
-  if (params.hasGarden) netRoomsArea += 20;
-  if (params.hasStairs || floors > 1) netRoomsArea += 10;
-  if (params.hasCourtyard) netRoomsArea += 18;
+  if (params.hasMajlis) netRoomsArea += 20;
+  if (params.hasGarage) netRoomsArea += params.garageCapacity === 2 ? 30 : 17;
+  if (params.hasGarden) netRoomsArea += 16;
+  if (params.hasStairs || floors > 1) netRoomsArea += 9;
+  if (params.hasCourtyard) netRoomsArea += 14;
 
-  // Add 18% for structural walls and internal hallways/circulation
-  const grossAreaNeeded = Math.round(netRoomsArea * 1.18);
-
-  // Maximum allowed ground footprint (assuming 75% coverage for villa set-backs, or full lot minus small clearance)
-  const maxFootprint = Math.round(lotArea * 0.85);
+  const grossAreaNeeded = Math.round(netRoomsArea * 1.15);
+  const maxFootprint = Math.round(lotArea * 0.92);
   const totalBuiltAreaAvailable = Math.round(maxFootprint * floors);
-
   const estimatedFloorsNeeded = Math.ceil(grossAreaNeeded / Math.max(30, maxFootprint));
 
   if (grossAreaNeeded > totalBuiltAreaAvailable) {
@@ -78,7 +103,6 @@ export function validateHouseInputs(params: HouseInputParams): ValidationResult 
     };
   }
 
-  // Check targetBuiltArea if user explicitly supplied it
   if (params.targetBuiltArea && params.targetBuiltArea > 0) {
     if (params.targetBuiltArea < grossAreaNeeded * 0.85) {
       return {
@@ -103,80 +127,139 @@ export function validateHouseInputs(params: HouseInputParams): ValidationResult 
 }
 
 /**
- * Procedural Parametric 3D House Plan Generator
- * Produces valid architectural room coordinates, walls, columns, doors, windows, and 3D specs.
+ * Generates style-accurate local facade image descriptors (no fragile external URLs).
  */
-export function generateProceduralPlan(
+export function buildStyleFacadeImages(
+  style: ArchitecturalStyle,
+  roofType: RoofType,
+  L: number,
+  W: number,
+  openDirs: FacadeDirection[],
   params: HouseInputParams,
-  optionVariant: number = 0
-): GeneratedHousePlan {
-  const L = Math.max(6, Math.min(60, Number(params.length) || 15));
-  const W = Math.max(5, Math.min(50, Number(params.width) || 10));
-  const lotArea = Number((L * W).toFixed(1));
-  const floors = Math.max(1, Math.min(4, Number(params.floorsCount) || 1));
-  const style: ArchitecturalStyle = params.style || 'modern';
-  const roofType: RoofType = params.roofType || 'flat';
+  idPrefix: string
+): FacadeImageData[] {
+  const facadeSummary = openDirs
+    .map((d) => (d === 'front' ? 'الأمامية' : d === 'back' ? 'الخلفية' : d === 'left' ? 'اليسرى' : 'اليمنى'))
+    .join(' و');
 
-  const bedroomsCount = Math.max(1, Math.min(10, Number(params.bedroomsCount) || 3));
-  const bathroomsCount = Math.max(1, Math.min(8, Number(params.bathroomsCount) || 2));
-  const livingRoomsCount = Math.max(1, Math.min(5, Number(params.livingRoomsCount) || 1));
-  const kitchensCount = Math.max(1, Math.min(3, Number(params.kitchensCount) || 1));
+  const mainUrl =
+    style === 'algerian' || style === 'andalusian' || style === 'mediterranean'
+      ? '/images/facades/algerian.jpg'
+      : style === 'classic' || style === 'traditional'
+      ? '/images/facades/classic.jpg'
+      : '/images/facades/modern.jpg';
 
-  // Determine Footprint and Setbacks based on targetBuiltArea if provided
-  let footprintL = L;
-  let footprintW = W;
-  let offsetX = 0;
-  let offsetY = 0;
+  const secondaryUrl =
+    style === 'algerian' || style === 'andalusian'
+      ? '/images/facades/classic.jpg'
+      : '/images/facades/algerian.jpg';
 
-  if (params.targetBuiltArea && params.targetBuiltArea > 0) {
-    const singleFloorTarget = params.targetBuiltArea / floors;
-    if (singleFloorTarget < lotArea * 0.95) {
-      const scale = Math.sqrt(singleFloorTarget / lotArea);
-      footprintL = Number(Math.max(5.5, L * scale).toFixed(1));
-      footprintW = Number(Math.max(5.0, W * scale).toFixed(1));
-      offsetX = Number(((L - footprintL) / 2).toFixed(1));
-      offsetY = Number(((W - footprintW) / 2).toFixed(1));
-    }
-  }
-
-  // 5 Distinct Architectural Layout Strategies
-  const optionMetaVariants = [
+  return [
     {
-      title: 'الخيار 1: توزيع عصري مفتوح مع صالة بانورامية',
-      badge: 'أعلى انسيابية وإضاءة ✨',
-      desc: `تصميم مفتوح يدمج الصالة الرئيسية بالحديقة الخارجية، مع ممرات حركة واسعة وتهوية طبيعية متقابلة.`
+      id: `${idPrefix}-1`,
+      title: `المنظور الرئيسي (${style}) — ${openDirs.length} واجهات مفتوحة`,
+      description: `تجسيد لطراز (${style}) بأبعاد ${L}×${W}م مع توجيه الفتحات حصرياً نحو الواجهات المفتوحة (${facadeSummary}) وسقف ${roofType === 'flat' ? 'مسطح' : 'مائل'}.`,
+      url: mainUrl,
+      prompt: `Photorealistic ${style} exterior villa facade ${L}x${W}m, ${openDirs.length} open facades (${openDirs.join(', ')}), ${roofType} roof, ${params.wallMaterial || ''}, ${params.customNotes || ''}`
     },
     {
-      title: 'الخيار 2: توزيع ملكي مفصول (جناح ضيوف معزول كلياً)',
-      badge: 'أعلى خصوصية للعائلة 🏛️',
-      desc: `فصل تام لمدخل ومجلس الضيوف ومغاسلهم عن فضاءات العائلة، بتوزيع ذكي يحفظ حرمة البيت.`
+      id: `${idPrefix}-2`,
+      title: 'الإضاءة المعمارية الليلية (Night LED View)',
+      description: 'توزيع وحدات الإضاءة المخفية LED والسبوتلايت على الكتل البارزة والمدخل الرئيسي.',
+      url: '/images/facades/night.jpg',
+      prompt: `Luxury ${style} villa exterior at twilight blue hour with warm 2700K architectural LED lighting`
     },
     {
-      title: 'الخيار 3: نمط فناء وسطي (وسط الدار الجزائري والأندلسي)',
-      badge: 'طابع تراثي ومناخ منعش 🌿',
-      desc: `توزيع حول فناء داخلي مشمس (وسط الدار) يوفر إضاءة وتجدد هواء دائم لكافة الغرف مع لمسة جمالية.`
-    },
-    {
-      title: 'الخيار 4: توزيع بشكل حرف L مع حوش خاص',
-      badge: 'استغلال اقتصادي فائق 📐',
-      desc: `تصميم يركز الكتل المعمارية على شكل زاوية لتوفير حوش خلفي فسيح وإطلالة مباشرة لكل غرف النوم.`
-    },
-    {
-      title: 'الخيار 5: توزيع أجنحة فندقية فاخرة',
-      badge: 'فخامة وراحة قصوى 💎',
-      desc: `توزيع يرتقي بغرف النوم إلى أجنحة فندقية واسعة مع غرف ملابس مدمجة وحمامات خاصة وشرفات إطلالة.`
+      id: `${idPrefix}-3`,
+      title: 'المدخل والفناء المعماري (Courtyard & Entry)',
+      description: `تنسيق الفضاء الخارجي والمدخل حسب الواجهات المفتوحة (${facadeSummary}) مع لمسات خامة: ${params.wallMaterial || 'حجر وخشب'}.`,
+      url: secondaryUrl,
+      prompt: `${style} house entrance archway and landscaped patio for ${L}x${W}m plot`
     }
   ];
+}
 
-  const optMeta = optionMetaVariants[optionVariant % optionMetaVariants.length];
+interface PartitionBox {
+  x: number;
+  y: number;
+  w: number;
+  l: number;
+}
 
-  // Structural Grid Columns (spaced 3.8m to 4.5m)
-  const spanX = 4.0;
-  const spanY = 4.0;
-  const colsCountX = Math.max(3, Math.ceil(footprintL / spanX) + 1);
-  const colsCountY = Math.max(3, Math.ceil(footprintW / spanY) + 1);
-  const totalColumns = colsCountX * colsCountY;
+/**
+ * Slices a rectangular zone horizontally (left-to-right columns) into proportional rooms.
+ */
+function sliceColumns(box: PartitionBox, weights: number[]): PartitionBox[] {
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const result: PartitionBox[] = [];
+  let cursorX = box.x;
+  weights.forEach((wt, idx) => {
+    const isLast = idx === weights.length - 1;
+    const w = isLast ? Number((box.x + box.w - cursorX).toFixed(2)) : Number(((box.w * wt) / total).toFixed(2));
+    result.push({
+      x: Number(cursorX.toFixed(2)),
+      y: Number(box.y.toFixed(2)),
+      w: Math.max(1.2, w),
+      l: Number(box.l.toFixed(2))
+    });
+    cursorX += w;
+  });
+  return result;
+}
 
+/**
+ * Slices a rectangular zone vertically (top-to-bottom rows) into proportional rooms.
+ */
+function sliceRows(box: PartitionBox, weights: number[]): PartitionBox[] {
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const result: PartitionBox[] = [];
+  let cursorY = box.y;
+  weights.forEach((wt, idx) => {
+    const isLast = idx === weights.length - 1;
+    const l = isLast ? Number((box.y + box.l - cursorY).toFixed(2)) : Number(((box.l * wt) / total).toFixed(2));
+    result.push({
+      x: Number(box.x.toFixed(2)),
+      y: Number(cursorY.toFixed(2)),
+      w: Number(box.w.toFixed(2)),
+      l: Math.max(1.2, l)
+    });
+    cursorY += l;
+  });
+  return result;
+}
+
+/**
+ * Deterministic geometry builder: derives CAD walls, facade-respecting openings (windows & doors),
+ * columns, and realistic furniture directly from rooms and openFacadeDirections.
+ */
+export function buildPlanGeometryFromRooms(
+  rooms: RoomData[],
+  params: HouseInputParams,
+  bounds?: { offsetX: number; offsetY: number; footprintL: number; footprintW: number }
+): {
+  walls: WallData[];
+  columns: ColumnData[];
+  openings: OpeningData[];
+  furniture: FurnitureData[];
+} {
+  const L = Math.max(6, Math.min(60, Number(params.length) || 15));
+  const W = Math.max(5, Math.min(50, Number(params.width) || 10));
+  const floors = Math.max(1, Math.min(4, Number(params.floorsCount) || 1));
+  const openDirs = normalizeOpenFacades(params);
+
+  const offsetX = bounds?.offsetX ?? 0;
+  const offsetY = bounds?.offsetY ?? 0;
+  const footprintL = bounds?.footprintL ?? L;
+  const footprintW = bounds?.footprintW ?? W;
+
+  const minX = offsetX;
+  const maxX = Number((offsetX + footprintL).toFixed(2));
+  const minY = offsetY;
+  const maxY = Number((offsetY + footprintW).toFixed(2));
+
+  // 1. Structural Column Grid (~3.8m - 4.4m spans)
+  const colsCountX = Math.max(3, Math.ceil(footprintL / 4.2) + 1);
+  const colsCountY = Math.max(3, Math.ceil(footprintW / 4.0) + 1);
   const columns: ColumnData[] = [];
   let colId = 1;
   const stepColX = (footprintL - 0.4) / (colsCountX - 1);
@@ -192,443 +275,972 @@ export function generateProceduralPlan(
         x: cx,
         y: cy,
         sizeX: 0.25,
-        sizeY: 0.5,
+        sizeY: 0.45,
         gridAxis: `${axisChar}-${iy + 1}`,
         floorSpan: floors > 1 ? `كامل الطوابق (0 - ${floors - 1})` : 'الطابق الأرضي'
       });
     }
   }
 
-  // Dynamic Rooms Array
+  // 2. Walls (Exterior + Deduplicated Interior Partitions)
+  const walls: WallData[] = [];
+  const wallKeys = new Set<string>();
+
+  const addWallOnce = (wall: WallData) => {
+    const a = `${wall.x1.toFixed(1)},${wall.y1.toFixed(1)}`;
+    const b = `${wall.x2.toFixed(1)},${wall.y2.toFixed(1)}`;
+    const key = a < b ? `${wall.floor}:${a}-${b}` : `${wall.floor}:${b}-${a}`;
+    if (!wallKeys.has(key)) {
+      wallKeys.add(key);
+      walls.push(wall);
+    }
+  };
+
+  for (let f = 0; f < floors; f++) {
+    // Exterior walls: back (y=minY), right (x=maxX), front (y=maxY), left (x=minX)
+    walls.push(
+      { id: `w-${f}-back`, x1: minX, y1: minY, x2: maxX, y2: minY, thickness: 0.25, isExterior: true, floor: f },
+      { id: `w-${f}-right`, x1: maxX, y1: minY, x2: maxX, y2: maxY, thickness: 0.25, isExterior: true, floor: f },
+      { id: `w-${f}-front`, x1: maxX, y1: maxY, x2: minX, y2: maxY, thickness: 0.25, isExterior: true, floor: f },
+      { id: `w-${f}-left`, x1: minX, y1: maxY, x2: minX, y2: minY, thickness: 0.25, isExterior: true, floor: f }
+    );
+
+    const floorRooms = rooms.filter((r) => r.floor === f && r.category !== 'balcony');
+    floorRooms.forEach((rm, idx) => {
+      const rx1 = Number(rm.x.toFixed(2));
+      const ry1 = Number(rm.y.toFixed(2));
+      const rx2 = Number((rm.x + rm.width).toFixed(2));
+      const ry2 = Number((rm.y + rm.length).toFixed(2));
+
+      // Only add interior edges that are NOT coincident with exterior boundary
+      if (Math.abs(ry1 - minY) > 0.25) {
+        addWallOnce({ id: `pw-${f}-${idx}-t`, x1: rx1, y1: ry1, x2: rx2, y2: ry1, thickness: 0.15, isExterior: false, floor: f });
+      }
+      if (Math.abs(rx2 - maxX) > 0.25) {
+        addWallOnce({ id: `pw-${f}-${idx}-r`, x1: rx2, y1: ry1, x2: rx2, y2: ry2, thickness: 0.15, isExterior: false, floor: f });
+      }
+      if (Math.abs(ry2 - maxY) > 0.25) {
+        addWallOnce({ id: `pw-${f}-${idx}-b`, x1: rx1, y1: ry2, x2: rx2, y2: ry2, thickness: 0.15, isExterior: false, floor: f });
+      }
+      if (Math.abs(rx1 - minX) > 0.25) {
+        addWallOnce({ id: `pw-${f}-${idx}-l`, x1: rx1, y1: ry1, x2: rx1, y2: ry2, thickness: 0.15, isExterior: false, floor: f });
+      }
+    });
+  }
+
+  // 3. Facade-Aware Exterior & Courtyard Openings (Zero openings on closed party walls!)
+  const openings: OpeningData[] = [];
+  let opId = 1;
+  const eps = 0.65; // tolerance from wall edge to detect room adjacency
+
+  const isDaylightCategory = (cat: RoomData['category']) =>
+    cat === 'living' || cat === 'bedroom' || cat === 'kitchen';
+
+  for (let f = 0; f < floors; f++) {
+    const floorRooms = rooms.filter((r) => r.floor === f);
+    const courtyard = rooms.find((r) => r.floor === 0 && (r.nameAr.includes('فناء') || r.nameAr.includes('وسط الدار') || r.nameAr.includes('منور')));
+
+    let mainEntrancePlaced = f !== 0;
+
+    // A) FRONT WALL (y = maxY) — Open only if 'front' is in openDirs
+    if (openDirs.includes('front')) {
+      const frontRooms = floorRooms.filter((r) => Math.abs((r.y + r.length) - maxY) <= eps && r.category !== 'outdoor' && r.category !== 'balcony');
+      for (const rm of frontRooms) {
+        if (rm.category === 'garage' && f === 0) {
+          const gW = Number(Math.min(3.0, Math.max(2.2, rm.width * 0.72)).toFixed(2));
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'door',
+            x: Number((rm.x + (rm.width - gW) / 2).toFixed(2)),
+            y: Number((maxY - 0.12).toFixed(2)),
+            width: gW,
+            rotation: 0,
+            label: 'باب المرآب الأوتوماتيكي',
+            floor: f
+          });
+          continue;
+        }
+
+        if (!mainEntrancePlaced && (rm.category === 'living' || rm.category === 'hall')) {
+          const dW = 1.4;
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'door',
+            x: Number((rm.x + Math.min(0.6, Math.max(0.25, rm.width * 0.15))).toFixed(2)),
+            y: Number((maxY - 0.12).toFixed(2)),
+            width: dW,
+            rotation: 0,
+            label: 'المدخل الرئيسي الفاخر',
+            floor: f
+          });
+          mainEntrancePlaced = true;
+
+          // Remaining front wall of this room gets a window if wide enough
+          if (rm.width > 3.6) {
+            const winW = Number(Math.min(2.4, Math.max(1.2, rm.width * 0.42)).toFixed(2));
+            openings.push({
+              id: `op-${opId++}`,
+              type: 'window',
+              x: Number((rm.x + rm.width - winW - 0.35).toFixed(2)),
+              y: Number((maxY - 0.12).toFixed(2)),
+              width: winW,
+              rotation: 0,
+              label: `نافذة ${rm.nameAr}`,
+              floor: f
+            });
+          }
+        } else if (isDaylightCategory(rm.category)) {
+          const winW = Number(Math.min(2.6, Math.max(1.1, rm.width * 0.52)).toFixed(2));
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((rm.x + (rm.width - winW) / 2).toFixed(2)),
+            y: Number((maxY - 0.12).toFixed(2)),
+            width: winW,
+            rotation: 0,
+            label: `نافذة ${rm.nameAr}`,
+            floor: f
+          });
+        } else if (rm.category === 'bathroom') {
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((rm.x + Math.max(0.2, (rm.width - 0.8) / 2)).toFixed(2)),
+            y: Number((maxY - 0.12).toFixed(2)),
+            width: 0.8,
+            rotation: 0,
+            label: `هواية ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+
+      if (f === 0 && !mainEntrancePlaced) {
+        openings.push({
+          id: `op-${opId++}`,
+          type: 'door',
+          x: Number((minX + footprintL * 0.22).toFixed(2)),
+          y: Number((maxY - 0.12).toFixed(2)),
+          width: 1.4,
+          rotation: 0,
+          label: 'المدخل الرئيسي',
+          floor: 0
+        });
+      }
+    }
+
+    // B) BACK WALL (y = minY) — Open ONLY if 'back' is in openDirs
+    if (openDirs.includes('back')) {
+      const backRooms = floorRooms.filter((r) => Math.abs(r.y - minY) <= eps && r.category !== 'outdoor' && r.category !== 'balcony');
+      for (const rm of backRooms) {
+        if (isDaylightCategory(rm.category)) {
+          const winW = Number(Math.min(2.4, Math.max(1.1, rm.width * 0.5)).toFixed(2));
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((rm.x + (rm.width - winW) / 2).toFixed(2)),
+            y: Number((minY + 0.12).toFixed(2)),
+            width: winW,
+            rotation: 180,
+            label: `نافذة خلفية - ${rm.nameAr}`,
+            floor: f
+          });
+        } else if (rm.category === 'bathroom') {
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((rm.x + Math.max(0.2, (rm.width - 0.8) / 2)).toFixed(2)),
+            y: Number((minY + 0.12).toFixed(2)),
+            width: 0.8,
+            rotation: 180,
+            label: `هواية ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+    }
+
+    // C) LEFT WALL (x = minX) — Open ONLY if 'left' is in openDirs
+    if (openDirs.includes('left')) {
+      const leftRooms = floorRooms.filter((r) => Math.abs(r.x - minX) <= eps && r.category !== 'outdoor' && r.category !== 'balcony');
+      for (const rm of leftRooms) {
+        if (isDaylightCategory(rm.category)) {
+          const winW = Number(Math.min(2.2, Math.max(1.0, rm.length * 0.46)).toFixed(2));
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((minX + 0.12).toFixed(2)),
+            y: Number((rm.y + (rm.length - winW) / 2).toFixed(2)),
+            width: winW,
+            rotation: 90,
+            label: `نافذة يسار - ${rm.nameAr}`,
+            floor: f
+          });
+        } else if (rm.category === 'bathroom') {
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((minX + 0.12).toFixed(2)),
+            y: Number((rm.y + Math.max(0.2, (rm.length - 0.8) / 2)).toFixed(2)),
+            width: 0.8,
+            rotation: 90,
+            label: `هواية ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+    }
+
+    // D) RIGHT WALL (x = maxX) — Open ONLY if 'right' is in openDirs
+    if (openDirs.includes('right')) {
+      const rightRooms = floorRooms.filter((r) => Math.abs((r.x + r.width) - maxX) <= eps && r.category !== 'outdoor' && r.category !== 'balcony');
+      for (const rm of rightRooms) {
+        if (rm.category === 'garage' && f === 0 && !openDirs.includes('front')) {
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'door',
+            x: Number((maxX - 0.12).toFixed(2)),
+            y: Number((rm.y + 0.4).toFixed(2)),
+            width: 2.6,
+            rotation: 270,
+            label: 'باب المرآب الجانبي',
+            floor: f
+          });
+        } else if (isDaylightCategory(rm.category)) {
+          const winW = Number(Math.min(2.2, Math.max(1.0, rm.length * 0.46)).toFixed(2));
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((maxX - 0.12).toFixed(2)),
+            y: Number((rm.y + (rm.length - winW) / 2).toFixed(2)),
+            width: winW,
+            rotation: 270,
+            label: `نافذة يمين - ${rm.nameAr}`,
+            floor: f
+          });
+        } else if (rm.category === 'bathroom') {
+          openings.push({
+            id: `op-${opId++}`,
+            type: 'window',
+            x: Number((maxX - 0.12).toFixed(2)),
+            y: Number((rm.y + Math.max(0.2, (rm.length - 0.8) / 2)).toFixed(2)),
+            width: 0.8,
+            rotation: 270,
+            label: `هواية ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+    }
+
+    // E) COURTYARD / LIGHTWELL OPENINGS (Ensures daylight when facades are closed!)
+    if (courtyard) {
+      const cy1 = courtyard.y;
+      const cy2 = courtyard.y + courtyard.length;
+      const cx1 = courtyard.x;
+      const cx2 = courtyard.x + courtyard.width;
+
+      for (const rm of floorRooms) {
+        if (rm.id === courtyard.id || rm.category === 'outdoor') continue;
+        // Touching courtyard top/bottom
+        const overlapX = Math.min(rm.x + rm.width, cx2) - Math.max(rm.x, cx1);
+        const overlapY = Math.min(rm.y + rm.length, cy2) - Math.max(rm.y, cy1);
+
+        if (overlapX >= 1.2 && (Math.abs((rm.y + rm.length) - cy1) <= 0.4 || Math.abs(rm.y - cy2) <= 0.4)) {
+          const isTopNeighbor = Math.abs((rm.y + rm.length) - cy1) <= 0.4;
+          const winX = Math.max(rm.x, cx1) + (overlapX - Math.min(1.6, overlapX * 0.6)) / 2;
+          openings.push({
+            id: `op-${opId++}`,
+            type: rm.category === 'living' ? 'door' : 'window',
+            x: Number(winX.toFixed(2)),
+            y: Number((isTopNeighbor ? cy1 : cy2).toFixed(2)),
+            width: Number(Math.min(1.6, overlapX * 0.6).toFixed(2)),
+            rotation: 0,
+            label: `إطلالة الفناء - ${rm.nameAr}`,
+            floor: f
+          });
+        } else if (overlapY >= 1.2 && (Math.abs((rm.x + rm.width) - cx1) <= 0.4 || Math.abs(rm.x - cx2) <= 0.4)) {
+          const isLeftNeighbor = Math.abs((rm.x + rm.width) - cx1) <= 0.4;
+          const winY = Math.max(rm.y, cy1) + (overlapY - Math.min(1.5, overlapY * 0.6)) / 2;
+          openings.push({
+            id: `op-${opId++}`,
+            type: rm.category === 'living' ? 'door' : 'window',
+            x: Number((isLeftNeighbor ? cx1 : cx2).toFixed(2)),
+            y: Number(winY.toFixed(2)),
+            width: Number(Math.min(1.5, overlapY * 0.6).toFixed(2)),
+            rotation: 90,
+            label: `إطلالة الفناء - ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+    }
+
+    // F) Interior Doors between rooms
+    floorRooms.forEach((rm, idx) => {
+      if (rm.category === 'outdoor' || rm.category === 'balcony' || rm.category === 'hall') return;
+      const doorW = rm.category === 'bathroom' ? 0.8 : 0.95;
+      // Put interior door on inner wall facing center of house
+      const centerX = minX + footprintL / 2;
+      const centerY = minY + footprintW / 2;
+      const rmCx = rm.x + rm.width / 2;
+      const rmCy = rm.y + rm.length / 2;
+
+      if (Math.abs(rmCy - centerY) >= Math.abs(rmCx - centerX)) {
+        const onTopWall = rmCy > centerY;
+        const dy = onTopWall ? rm.y : rm.y + rm.length;
+        if (Math.abs(dy - minY) > 0.55 && Math.abs(dy - maxY) > 0.55) {
+          openings.push({
+            id: `op-int-${f}-${idx}`,
+            type: 'door',
+            x: Number((rm.x + Math.max(0.25, (rm.width - doorW) / 2)).toFixed(2)),
+            y: Number(dy.toFixed(2)),
+            width: doorW,
+            rotation: 0,
+            label: `باب ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      } else {
+        const onLeftWall = rmCx > centerX;
+        const dx = onLeftWall ? rm.x : rm.x + rm.width;
+        if (Math.abs(dx - minX) > 0.55 && Math.abs(dx - maxX) > 0.55) {
+          openings.push({
+            id: `op-int-${f}-${idx}`,
+            type: 'door',
+            x: Number(dx.toFixed(2)),
+            y: Number((rm.y + Math.max(0.25, (rm.length - doorW) / 2)).toFixed(2)),
+            width: doorW,
+            rotation: 90,
+            label: `باب ${rm.nameAr}`,
+            floor: f
+          });
+        }
+      }
+    });
+  }
+
+  // 4. Contextual Furniture inside every room
+  const furniture: FurnitureData[] = [];
+  rooms.forEach((rm, idx) => {
+    if (rm.category === 'living') {
+      const sW = Number(Math.min(3.2, Math.max(1.8, rm.width * 0.62)).toFixed(2));
+      const sD = Number(Math.min(1.8, Math.max(0.9, rm.length * 0.38)).toFixed(2));
+      furniture.push({
+        id: `furn-sofa-${idx}`,
+        type: 'sofa',
+        label: rm.nameAr.includes('مجلس') ? 'مجلس استقبال فاخر' : 'طقم كنب الصالة',
+        x: Number((rm.x + (rm.width - sW) / 2).toFixed(2)),
+        y: Number((rm.y + 0.45).toFixed(2)),
+        width: sW,
+        depth: sD,
+        rotation: 0,
+        floor: rm.floor
+      });
+      if (rm.width >= 3.8 && rm.length >= 3.6) {
+        furniture.push({
+          id: `furn-table-${idx}`,
+          type: 'table',
+          label: 'طاولة ضيافة / طعام',
+          x: Number((rm.x + (rm.width - 1.8) / 2).toFixed(2)),
+          y: Number((rm.y + rm.length - 1.5).toFixed(2)),
+          width: 1.8,
+          depth: 0.95,
+          rotation: 0,
+          floor: rm.floor
+        });
+      }
+    } else if (rm.category === 'bedroom') {
+      const isMaster = rm.nameAr.includes('الماستر') || rm.nameAr.includes('رئيسي');
+      const bW = Number(Math.min(rm.width - 0.8, isMaster ? 2.0 : 1.6).toFixed(2));
+      const bD = Number(Math.min(rm.length - 0.8, 2.0).toFixed(2));
+      furniture.push({
+        id: `furn-bed-${idx}`,
+        type: 'bed',
+        label: isMaster ? 'سرير كينج ماستر' : 'سرير نوم',
+        x: Number((rm.x + (rm.width - bW) / 2).toFixed(2)),
+        y: Number((rm.y + 0.45).toFixed(2)),
+        width: bW,
+        depth: bD,
+        rotation: 0,
+        floor: rm.floor
+      });
+    } else if (rm.category === 'kitchen') {
+      const kW = Number(Math.min(rm.width - 0.6, 2.8).toFixed(2));
+      furniture.push({
+        id: `furn-kit-${idx}`,
+        type: 'kitchen_counter',
+        label: 'خزائن وجزيرة المطبخ',
+        x: Number((rm.x + 0.3).toFixed(2)),
+        y: Number((rm.y + 0.3).toFixed(2)),
+        width: kW,
+        depth: 0.85,
+        rotation: 0,
+        floor: rm.floor
+      });
+    } else if (rm.category === 'garage') {
+      const cW = Number(Math.min(rm.width - 0.7, 1.95).toFixed(2));
+      const cD = Number(Math.min(rm.length - 0.8, 4.2).toFixed(2));
+      furniture.push({
+        id: `furn-car-${idx}`,
+        type: 'car',
+        label: 'سيارة بالمرآب',
+        x: Number((rm.x + (rm.width - cW) / 2).toFixed(2)),
+        y: Number((rm.y + (rm.length - cD) / 2).toFixed(2)),
+        width: cW,
+        depth: cD,
+        rotation: 0,
+        floor: rm.floor
+      });
+    }
+  });
+
+  return { walls, columns, openings, furniture };
+}
+
+/**
+ * Deterministic Parametric 3D House Plan Generator
+ * Respects openFacadeDirections (front = y=footprintW, back = y=0, left = x=0, right = x=footprintL)
+ * without random overlap: daylight rooms sit along open facades or an automatic courtyard lightwell,
+ * while blind/service rooms (bathrooms, stairs) pack along closed party walls.
+ */
+export function generateProceduralPlan(
+  params: HouseInputParams,
+  optionVariant: number = 0
+): GeneratedHousePlan {
+  const L = Math.max(6, Math.min(60, Number(params.length) || 15));
+  const W = Math.max(5, Math.min(50, Number(params.width) || 10));
+  const lotArea = Number((L * W).toFixed(1));
+  const floors = Math.max(1, Math.min(4, Number(params.floorsCount) || 1));
+  const style: ArchitecturalStyle = params.style || 'modern';
+  const roofType: RoofType = params.roofType || 'flat';
+  const openDirs = normalizeOpenFacades(params);
+  const normalizedParams: HouseInputParams = {
+    ...params,
+    facadesCount: openDirs.length,
+    openFacadeDirections: openDirs
+  };
+
+  const bedroomsCount = Math.max(1, Math.min(10, Number(params.bedroomsCount) || 3));
+  const bathroomsCount = Math.max(1, Math.min(8, Number(params.bathroomsCount) || 2));
+  const livingRoomsCount = Math.max(1, Math.min(5, Number(params.livingRoomsCount) || 1));
+  const kitchensCount = Math.max(1, Math.min(3, Number(params.kitchensCount) || 1));
+
+  // Footprint & setbacks
+  let footprintL = L;
+  let footprintW = W;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (params.targetBuiltArea && params.targetBuiltArea > 0) {
+    const singleFloorTarget = params.targetBuiltArea / floors;
+    if (singleFloorTarget < lotArea * 0.94) {
+      const scale = Math.sqrt(singleFloorTarget / lotArea);
+      footprintL = Number(Math.max(5.5, L * scale).toFixed(1));
+      footprintW = Number(Math.max(5.0, W * scale).toFixed(1));
+      // Keep closed walls flush to party boundary, pull back only on open sides
+      const freeX = (openDirs.includes('left') ? 1 : 0) + (openDirs.includes('right') ? 1 : 0);
+      const freeY = (openDirs.includes('front') ? 1 : 0) + (openDirs.includes('back') ? 1 : 0);
+      offsetX = freeX === 2 ? Number(((L - footprintL) / 2).toFixed(1)) : openDirs.includes('left') ? Number((L - footprintL).toFixed(1)) : 0;
+      offsetY = freeY === 2 ? Number(((W - footprintW) / 2).toFixed(1)) : openDirs.includes('back') ? Number((W - footprintW).toFixed(1)) : 0;
+      if (!openDirs.includes('left') && !openDirs.includes('right')) {
+        offsetX = Number(((L - footprintL) / 2).toFixed(1));
+      }
+      if (!openDirs.includes('back') && openDirs.includes('front')) {
+        // Party wall at back (y=0), front open setback
+        offsetY = 0;
+      }
+    }
+  }
+
+  const openDirAr = openDirs
+    .map((d) => (d === 'front' ? 'الأمامية' : d === 'back' ? 'الخلفية' : d === 'left' ? 'اليسرى' : 'اليمنى'))
+    .join(' + ');
+
+  const optionMetaVariants = [
+    {
+      title: 'الخيار 1: توزيع عصري مفتوح موجه للواجهات',
+      badge: 'أعلى إضاءة وتدفق ✨',
+      desc: `توزيع يضع فضاءات الاستقبال والمعيشة على الواجهات المفتوحة (${openDirAr}) والخدمات على الجدران الصماء.`
+    },
+    {
+      title: 'الخيار 2: توزيع ملكي مفصول (جناح ضيوف معزول)',
+      badge: 'أعلى خصوصية للعائلة 🏛️',
+      desc: `فصل تام لمدخل ومجلس الضيوف بواجهة مستقلة عن جناح العائلة مع توجيه مثالي للنوافذ (${openDirAr}).`
+    },
+    {
+      title: 'الخيار 3: نمط فناء وسطي (وسط الدار ومنور إضاءة)',
+      badge: 'تراثي ومنعش مناخياً 🌿',
+      desc: `فناء وسطي مفتوح يمدّ كافة الغرف الداخلية والخلفيات بالضوء والتهوية دون كشف الجيران.`
+    },
+    {
+      title: 'الخيار 4: توزيع جناح مدمج على حرف L مع حديقة',
+      badge: 'استغلال ذكي للأرض 📐',
+      desc: `تركيز الكتلة السكنية لإفساح حديقة وجلسة عائلية محمية نحو الجهات المفتوحة (${openDirAr}).`
+    },
+    {
+      title: 'الخيار 5: أجنحة فندقية فاخرة بإطلالات متقابلة',
+      badge: 'فخامة وإطلالة 💎',
+      desc: `تنظيم فندقي يرفع نسبة الغرف المطلة على الشوارع والحدائق المفتوحة (${openDirAr}).`
+    }
+  ];
+
+  const variant = ((optionVariant % 5) + 5) % 5;
+  const optMeta = optionMetaVariants[variant];
+
+  const pad = 0.25;
+  const bX0 = Number((offsetX + pad).toFixed(2));
+  const bY0 = Number((offsetY + pad).toFixed(2));
+  const bW = Number((footprintL - pad * 2).toFixed(2));
+  const bL = Number((footprintW - pad * 2).toFixed(2));
+
+  // Automatically enable courtyard/lightwell when facades <= 2 or explicitly requested
+  const autoLightwell = openDirs.length <= 2 && bL >= 8.5;
+  const includeCourtyard =
+    Boolean(params.hasCourtyard) || variant === 2 || style === 'andalusian' || style === 'algerian' || autoLightwell;
+  const needStairs = Boolean(params.hasStairs) || floors > 1;
+
+  // Determine mirror polarity so open side gets light & variants meaningfully differ
+  const preferLeftForGuest =
+    variant === 1
+      ? openDirs.includes('right') && !openDirs.includes('left')
+      : openDirs.includes('left') || !openDirs.includes('right');
+
   const rooms: RoomData[] = [];
   let rCount = 1;
 
-  // Margin buffer from footprint perimeter
-  const pad = 0.35;
-  const bX0 = offsetX + pad;
-  const bY0 = offsetY + pad;
-  const bW = footprintL - pad * 2;
-  const bL = footprintW - pad * 2;
-
-  // 1. Central Courtyard (وسط الدار / الفناء الداخلي)
-  const includeCourtyard = params.hasCourtyard || optionVariant === 2 || style === 'andalusian' || style === 'algerian';
-  let courtX = 0;
-  let courtY = 0;
-  let courtW = 0;
-  let courtL = 0;
-
-  if (includeCourtyard) {
-    courtW = Number(Math.max(3.2, Math.min(5.5, bW * 0.28)).toFixed(1));
-    courtL = Number(Math.max(3.2, Math.min(5.5, bL * 0.32)).toFixed(1));
-    courtX = Number((bX0 + (bW - courtW) / 2).toFixed(1));
-    courtY = Number((bY0 + (bL - courtL) / 2).toFixed(1));
-
+  const pushRoom = (
+    nameAr: string,
+    nameEn: string,
+    box: PartitionBox,
+    floor: number,
+    category: RoomData['category'],
+    color: string,
+    description: string,
+    customId?: string
+  ) => {
+    const w = Number(Math.max(1.4, box.w).toFixed(1));
+    const l = Number(Math.max(1.4, box.l).toFixed(1));
     rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: style === 'algerian' ? 'وسط الدار (فناء مغاربي مفتوح)' : 'الفناء الداخلي المشمس (كورت يارد)',
-      nameEn: 'Central Courtyard',
-      width: courtW,
-      length: courtL,
-      area: Number((courtW * courtL).toFixed(1)),
-      floor: 0,
-      color: '#06b6d4',
-      description: 'فناء وسطي مفتوح للسماء بنباتات وزليج تقليدي أو نافورة مياه عذبة تعزز تلطيف الجو.',
-      x: courtX,
-      y: courtY,
-      category: 'outdoor'
+      id: customId || `r-${rCount++}`,
+      nameAr,
+      nameEn,
+      width: w,
+      length: l,
+      area: Number((w * l).toFixed(1)),
+      floor,
+      color,
+      description,
+      x: Number(box.x.toFixed(1)),
+      y: Number(box.y.toFixed(1)),
+      category
     });
-  }
+  };
 
-  // 2. Staircase Core (الدرج الداخلي) if multi-floor or hasStairs is enabled
-  const needStairs = params.hasStairs || floors > 1;
-  const stairW = 2.4;
-  const stairL = Number(Math.min(3.6, bL * 0.35).toFixed(1));
-  let stairX = 0;
-  let stairY = 0;
+  // ========================
+  // FLOOR 0 NON-OVERLAPPING BANDS
+  // Front Band (y near bY0 + bL -> street side 'front'), Middle Core Band, Back Band (y near bY0 -> 'back')
+  // ========================
+  const frontBandRatio = floors === 1 ? 0.36 : 0.44;
+  const midBandRatio = includeCourtyard || needStairs ? 0.24 : 0.14;
+  const backBandRatio = Number((1 - frontBandRatio - midBandRatio).toFixed(2));
 
-  if (needStairs) {
-    // Position stairs centrally or beside courtyard
-    stairX = includeCourtyard ? Number((courtX + courtW + 0.3).toFixed(1)) : Number((bX0 + bW * 0.45).toFixed(1));
-    if (stairX + stairW > bX0 + bW) stairX = Number((bX0 + bW - stairW - 0.4).toFixed(1));
-    stairY = Number((bY0 + bL * 0.35).toFixed(1));
+  const [backBand, midBand, frontBand] = sliceRows(
+    { x: bX0, y: bY0, w: bW, l: bL },
+    [backBandRatio, midBandRatio, frontBandRatio]
+  );
 
-    // Place stairwell on ground floor
-    rooms.push({
-      id: `r-stairs-0`,
-      nameAr: 'الدرج الرئيسي والبهو',
-      nameEn: 'Main Staircase',
-      width: stairW,
-      length: stairL,
-      area: Number((stairW * stairL).toFixed(1)),
-      floor: 0,
-      color: '#64748b',
-      description: 'سلم خرساني مريح مع درابزين زجاجي وخزائن تخزين أسفل الدرج.',
-      x: stairX,
-      y: stairY,
-      category: 'hall'
-    });
+  // --- FRONT BAND (Facing 'front' open street at y = maxY) ---
+  // Contains: Majlis (if enabled), Main Living Room (or combined reception), Garage (if enabled)
+  const frontItems: {
+    nameAr: string;
+    nameEn: string;
+    cat: RoomData['category'];
+    color: string;
+    desc: string;
+    weight: number;
+  }[] = [];
 
-    // Place stairwell on upper floors as well
-    for (let f = 1; f < floors; f++) {
-      rooms.push({
-        id: `r-stairs-${f}`,
-        nameAr: `موزع الدرج (طابق ${f})`,
-        nameEn: `Staircase Landing Floor ${f}`,
-        width: stairW,
-        length: stairL,
-        area: Number((stairW * stairL).toFixed(1)),
-        floor: f,
-        color: '#64748b',
-        description: 'بهو وصول علوي يربط بين أجنحة النوم والصالة العلوية.',
-        x: stairX,
-        y: stairY,
-        category: 'hall'
-      });
-    }
-  }
-
-  // 3. Majlis / Reception (Floor 0)
   if (params.hasMajlis) {
-    const majW = Number(Math.min(bW * 0.46, Math.max(4.2, bW * 0.38)).toFixed(1));
-    const majL = Number(Math.min(bL * 0.48, Math.max(4.0, bL * 0.4)).toFixed(1));
-    const majX = optionVariant === 1 ? Number((bX0 + bW - majW).toFixed(1)) : bX0;
-    const majY = bY0;
-
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: optionVariant === 1 ? 'مجلس الضيوف المستقل (المدخل الملكي)' : 'مجلس الضيوف وصالون الاستقبال',
+    frontItems.push({
+      nameAr: variant === 1 ? 'مجلس الضيوف المستقل (المدخل الملكي)' : 'مجلس الضيوف وصالون الاستقبال',
       nameEn: 'Majlis Reception',
-      width: majW,
-      length: majL,
-      area: Number((majW * majL).toFixed(1)),
-      floor: 0,
+      cat: 'living',
       color: style === 'algerian' || style === 'traditional' ? '#d97706' : '#2563eb',
-      description: 'فضاء استقبال فخم بمدخل مباشر ونوافذ واسعة مطلة على الشارع الرئيسي.',
-      x: majX,
-      y: majY,
-      category: 'living'
-    });
-
-    // Guest bathroom with vanity
-    const gBathW = Number(Math.min(2.4, majW * 0.45).toFixed(1));
-    const gBathL = Number(Math.min(2.2, majL * 0.45).toFixed(1));
-    const gBathX = optionVariant === 1 ? Number((majX - gBathW - 0.2).toFixed(1)) : Number((majX + majW + 0.2).toFixed(1));
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: 'مغاسل وحمام ضيوف',
-      nameEn: 'Guest Bathroom',
-      width: gBathW,
-      length: gBathL,
-      area: Number((gBathW * gBathL).toFixed(1)),
-      floor: 0,
-      color: '#06b6d4',
-      description: 'مغاسل رخامية فاخرة وخدمات صحية لضيوف المجلس.',
-      x: Math.max(bX0, Math.min(bX0 + bW - gBathW, gBathX)),
-      y: bY0,
-      category: 'bathroom'
+      desc: 'مجلس استقبال رسمي يطل مباشرة على الواجهة الأمامية المفتوحة بمدخل مستقل.',
+      weight: 1.35
     });
   }
 
-  // 4. Family Living Room(s) (Floor 0 and Upper Floors)
-  for (let l = 1; l <= livingRoomsCount; l++) {
-    const isGround = l === 1 || floors === 1;
-    const targetFloor = isGround ? 0 : 1;
-    const livW = Number(Math.min(bW * 0.52, Math.max(4.4, bW * 0.44)).toFixed(1));
-    const livL = Number(Math.min(bL * 0.46, Math.max(3.8, bL * 0.4)).toFixed(1));
-
-    let livX = bX0;
-    let livY = Number((bY0 + bL * 0.45).toFixed(1));
-
-    if (optionVariant === 1) {
-      livX = bX0;
-      livY = bY0;
-    } else if (includeCourtyard) {
-      livX = bX0;
-      livY = Number((courtY).toFixed(1));
-    }
-
-    if (!isGround) {
-      livX = Number((bX0 + 0.5).toFixed(1));
-      livY = Number((bY0 + 0.5).toFixed(1));
-    }
-
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: l === 1 ? 'صالة المعيشة العائلية الكبرى' : `صالة الجلوس العائلية (${l === 2 ? 'العلوية' : `إضافية ${l}`})`,
-      nameEn: `Family Living ${l}`,
-      width: livW,
-      length: livL,
-      area: Number((livW * livL).toFixed(1)),
-      floor: targetFloor,
-      color: '#8b5cf6',
-      description: 'فضاء معيشة رئيسي مفتوح بإضاءة طبيعية وافرة وتواصل بصري.',
-      x: Math.max(bX0, Math.min(bX0 + bW - livW, livX)),
-      y: Math.max(bY0, Math.min(bY0 + bL - livL, livY)),
-      category: 'living'
-    });
-  }
-
-  // 5. Kitchen(s) (Floor 0)
-  for (let k = 1; k <= kitchensCount; k++) {
-    const kitW = Number(Math.min(bW * 0.38, Math.max(3.4, bW * 0.32)).toFixed(1));
-    const kitL = Number(Math.min(bL * 0.42, Math.max(3.2, bL * 0.35)).toFixed(1));
-    const kitX = Number((bX0 + bW - kitW).toFixed(1));
-    const kitY = Number((bY0 + bL - kitL).toFixed(1));
-
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: k === 1 ? (optionVariant === 0 ? 'المطبخ الأمريكي المفتوح مع جزيرة' : 'المطبخ الرئيسي وصالة الطعام') : `مطبخ تحضيري إضافي (Dirty Kitchen) ${k}`,
-      nameEn: `Kitchen ${k}`,
-      width: kitW,
-      length: kitL,
-      area: Number((kitW * kitL).toFixed(1)),
-      floor: 0,
-      color: '#f59e0b',
-      description: 'مطبخ عصري مزود بتهوية مباشرة ومدخل خدمة خلفي.',
-      x: Math.max(bX0, kitX),
-      y: Math.max(bY0, kitY),
-      category: 'kitchen'
-    });
-  }
-
-  // 6. Garage (مرآب السيارات)
-  if (params.hasGarage) {
-    const isDouble = params.garageCapacity === 2;
-    const garW = isDouble ? Number(Math.min(6.0, bW * 0.42).toFixed(1)) : Number(Math.min(4.0, bW * 0.28).toFixed(1));
-    const garL = Number(Math.min(6.0, bL * 0.48).toFixed(1));
-    const garX = Number((bX0 + bW - garW).toFixed(1));
-    const garY = bY0;
-
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: `مرآب السيارات (${isDouble ? 'سيارتين' : 'سيارة واحدة'})`,
-      nameEn: 'Garage',
-      width: garW,
-      length: garL,
-      area: Number((garW * garL).toFixed(1)),
-      floor: 0,
-      color: '#64748b',
-      description: 'موقف سيارات مغطى ومحمي مع باب رول أوتوماتيكي ومدخل داخلي.',
-      x: garX,
-      y: garY,
-      category: 'garage'
-    });
-  }
-
-  // 7. Garden / Landscape (Floor 0)
-  if (params.hasGarden) {
-    const gdnW = Number(Math.min(bW * 0.38, Math.max(3.5, bW * 0.3)).toFixed(1));
-    const gdnL = Number(Math.min(bL * 0.42, Math.max(3.5, bL * 0.32)).toFixed(1));
-    const gdnX = bX0;
-    const gdnY = Number((bY0 + bL - gdnL).toFixed(1));
-
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: 'الحديقة الخارجية والجلسة الخضراء',
-      nameEn: 'Outdoor Garden',
-      width: gdnW,
-      length: gdnL,
-      area: Number((gdnW * gdnL).toFixed(1)),
-      floor: 0,
-      color: '#10b981',
-      description: 'مسطح أخضر مع جلسة مشمسة ونباتات وزينة طبيعية.',
-      x: gdnX,
-      y: gdnY,
-      category: 'outdoor'
-    });
-  }
-
-  // 8. Dynamic Distribution of Bedrooms & Bathrooms
-  // Single-floor houses MUST place ALL bedrooms on Floor 0.
-  // Multi-floor houses place bedrooms primarily on Floor 1, and Floor 2 if 3+ floors.
-  const bedWidth = Number(Math.min(bW * 0.44, Math.max(3.6, bW * (floors === 1 ? 0.3 : 0.38))).toFixed(1));
-  const bedLength = Number(Math.min(bL * 0.45, Math.max(3.4, bL * (floors === 1 ? 0.32 : 0.36))).toFixed(1));
-
-  for (let b = 1; b <= bedroomsCount; b++) {
-    const isMaster = b === 1;
-
-    let targetFloor = 0;
-    if (floors === 1) {
-      targetFloor = 0;
-    } else if (floors === 2) {
-      targetFloor = 1;
-    } else if (floors >= 3) {
-      targetFloor = b <= 3 ? 1 : 2;
-    }
-
-    // Grid coordinates on target floor
-    const colsOnFloor = floors === 1 ? 3 : 2;
-    const colIndex = (b - 1) % colsOnFloor;
-    const rowIndex = Math.floor((b - 1) / colsOnFloor);
-
-    let bx = Number((bX0 + colIndex * (bedWidth + 0.4)).toFixed(1));
-    let by = Number((bY0 + rowIndex * (bedLength + 0.4)).toFixed(1));
-
-    if (floors > 1 && isMaster) {
-      // Master suite at front corner
-      bx = bX0;
-      by = bY0;
-    }
-
-    bx = Math.max(bX0, Math.min(bX0 + bW - bedWidth, bx));
-    by = Math.max(bY0, Math.min(bY0 + bL - bedLength, by));
-
-    const wActual = isMaster ? Number((bedWidth * 1.15).toFixed(1)) : bedWidth;
-    const lActual = isMaster ? Number((bedLength * 1.1).toFixed(1)) : bedLength;
-
-    rooms.push({
-      id: `r-bed-${b}`,
-      nameAr: isMaster
-        ? (style === 'algerian' ? 'جناح الماستر الرئيسي (غرفة النوم الكبرى)' : 'جناح غرفة النوم الرئيسية (الماستر)')
-        : `غرفة نوم ${b} (${b === 2 ? 'الأطفال' : b === 3 ? 'الشباب' : 'الضيوف'})`,
-      nameEn: isMaster ? 'Master Bedroom Suite' : `Bedroom ${b}`,
-      width: Math.min(bW - 0.2, wActual),
-      length: Math.min(bL - 0.2, lActual),
-      area: Number((wActual * lActual).toFixed(1)),
-      floor: targetFloor,
-      color: isMaster ? '#6366f1' : '#3b82f6',
-      description: isMaster
-        ? 'جناح ماستر ملوكي يتضمن منطقة سرير فخم، خزانة ملابس جدارية مدمجة، وحمام خاص.'
-        : `غرفة نوم عصرية بمقاسات مريحة تستوعب سريراً ومكتب دراسة ودولاب ملابس.`,
-      x: bx,
-      y: by,
-      category: 'bedroom'
-    });
-  }
-
-  // Family bathrooms
-  const remainingBaths = Math.max(1, bathroomsCount - (params.hasMajlis ? 1 : 0));
-  for (let b = 1; b <= remainingBaths; b++) {
-    const isMasterBath = b === 1;
-    const targetFloor = floors === 1 ? 0 : (isMasterBath ? 1 : (floors >= 3 && b > 2 ? 2 : 1));
-
-    const bathW = 2.4;
-    const bathL = 2.2;
-    const bathX = Number(Math.max(bX0, Math.min(bX0 + bW - bathW, bX0 + bW - bathW - 0.4 - (b - 1) * 2.6)).toFixed(1));
-    const bathY = Number(Math.max(bY0, Math.min(bY0 + bL - bathL, bY0 + 0.5 + (b - 1) * 2.8)).toFixed(1));
-
-    rooms.push({
-      id: `r-bath-${b}`,
-      nameAr: isMasterBath ? 'حمام جناح الماستر الخاص' : `حمام العائلة المشترك ${b}`,
-      nameEn: `Bathroom ${b}`,
-      width: bathW,
-      length: bathL,
-      area: Number((bathW * bathL).toFixed(1)),
-      floor: targetFloor,
-      color: '#14b8a6',
-      description: 'حمام مجهز بتهوية صحية وأطقم راقية وتكسيات بورسلان مقاومة للرطوبة.',
-      x: bathX,
-      y: bathY,
-      category: 'bathroom'
-    });
-  }
-
-  // 9. Balcony / Terrace (Floor 1 or 2)
-  if (params.hasBalcony && floors > 1) {
-    const balcW = Number(Math.min(5.5, bW * 0.4).toFixed(1));
-    const balcL = 2.2;
-    rooms.push({
-      id: `r-${rCount++}`,
-      nameAr: style === 'algerian' ? 'شرفة وتراس مشمس (سطيحة)' : 'شرفة وتراس إطلالة بانورامية',
-      nameEn: 'Balcony Terrace',
-      width: balcW,
-      length: balcL,
-      area: Number((balcW * balcL).toFixed(1)),
-      floor: 1,
-      color: '#ec4899',
-      description: 'شرفة بإطلالة مفتوحة مع درابزين حماية زجاجي أو ألومنيوم معاصر.',
-      x: Number((bX0 + (bW - balcW) / 2).toFixed(1)),
-      y: Number((bY0 + bL - balcL).toFixed(1)),
-      category: 'balcony'
-    });
-  }
-
-  // Exterior Perimeter Walls
-  const walls: WallData[] = [];
-  for (let f = 0; f < floors; f++) {
-    walls.push(
-      { id: `w-${f}-1`, x1: offsetX, y1: offsetY, x2: offsetX + footprintL, y2: offsetY, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-2`, x1: offsetX + footprintL, y1: offsetY, x2: offsetX + footprintL, y2: offsetY + footprintW, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-3`, x1: offsetX + footprintL, y1: offsetY + footprintW, x2: offsetX, y2: offsetY + footprintW, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-4`, x1: offsetX, y1: offsetY + footprintW, x2: offsetX, y2: offsetY, thickness: 0.25, isExterior: true, floor: f }
-    );
-
-    // Interior Partition Walls around each room
-    const roomsOnFloor = rooms.filter((r) => r.floor === f && r.category !== 'outdoor');
-    roomsOnFloor.forEach((rm, idx) => {
-      // Room perimeter interior walls
-      walls.push(
-        { id: `pw-${f}-${idx}-1`, x1: rm.x, y1: rm.y, x2: rm.x + rm.width, y2: rm.y, thickness: 0.15, isExterior: false, floor: f },
-        { id: `pw-${f}-${idx}-2`, x1: rm.x + rm.width, y1: rm.y, x2: rm.x + rm.width, y2: rm.y + rm.length, thickness: 0.15, isExterior: false, floor: f },
-        { id: `pw-${f}-${idx}-3`, x1: rm.x + rm.width, y1: rm.y + rm.length, x2: rm.x, y2: rm.y + rm.length, thickness: 0.15, isExterior: false, floor: f },
-        { id: `pw-${f}-${idx}-4`, x1: rm.x, y1: rm.y + rm.length, x2: rm.x, y2: rm.y, thickness: 0.15, isExterior: false, floor: f }
-      );
-    });
-  }
-
-  // Openings (Doors & Windows)
-  const openings: OpeningData[] = [
-    { id: 'op-main-door', type: 'door', x: Number((offsetX + footprintL * 0.25).toFixed(1)), y: offsetY + 0.1, width: 1.4, rotation: 0, label: 'المدخل الرئيسي الفاخر', floor: 0 },
-    { id: 'op-win-front', type: 'window', x: Number((offsetX + footprintL * 0.6).toFixed(1)), y: offsetY + 0.1, width: 2.4, rotation: 0, label: 'نافذة الواجهة الأمامية', floor: 0 }
-  ];
-
-  if (params.openFacadeDirections?.includes('back') || !params.openFacadeDirections) {
-    openings.push({
-      id: 'op-win-back',
-      type: 'window',
-      x: Number((offsetX + footprintL * 0.4).toFixed(1)),
-      y: Number((offsetY + footprintW - 0.1).toFixed(1)),
-      width: 2.2,
-      rotation: 0,
-      label: 'نافذة الإطلالة الخلفية',
-      floor: 0
-    });
-  }
-
-  if (floors > 1) {
-    openings.push(
-      { id: 'op-f1-master-win', type: 'window', x: Number((offsetX + footprintL * 0.2).toFixed(1)), y: offsetY + 0.1, width: 2.6, rotation: 0, label: 'نافذة جناح الماستر البانورامية', floor: 1 },
-      { id: 'op-f1-balc-door', type: 'door', x: Number((offsetX + footprintL * 0.5).toFixed(1)), y: Number((offsetY + footprintW - 0.1).toFixed(1)), width: 1.6, rotation: 0, label: 'باب الشرفة الزجاجي', floor: 1 }
-    );
-  }
-
-  // Realistic Furniture Placements
-  const furniture: FurnitureData[] = [
-    { id: 'furn-sofa-main', type: 'sofa', label: 'طقم كنب الصالة الرئيسية', x: Number((bX0 + 0.8).toFixed(1)), y: Number((bY0 + bL * 0.48).toFixed(1)), width: 3.2, depth: 1.8, rotation: 0, floor: 0 },
-    { id: 'furn-dining', type: 'table', label: 'طاولة طعام العائلة', x: Number((bX0 + bW * 0.4).toFixed(1)), y: Number((bY0 + bL * 0.65).toFixed(1)), width: 2.4, depth: 1.2, rotation: 0, floor: 0 }
-  ];
-
-  if (params.hasGarage) {
-    furniture.push({
-      id: 'furn-car-1',
-      type: 'car',
-      label: 'سيارة بالمرآب',
-      x: Number((bX0 + bW - 3.2).toFixed(1)),
-      y: Number((bY0 + 0.8).toFixed(1)),
-      width: 2.0,
-      depth: 4.4,
-      rotation: 0,
-      floor: 0
-    });
-  }
-
-  // Beds in bedrooms
-  rooms.filter((r) => r.category === 'bedroom').forEach((bRoom, idx) => {
-    const isMaster = bRoom.nameAr.includes('الماستر');
-    furniture.push({
-      id: `furn-bed-${idx}`,
-      type: 'bed',
-      label: isMaster ? 'سرير كينج ماستر' : 'سرير نوم فردي/مزدوج',
-      x: Number((bRoom.x + 0.6).toFixed(1)),
-      y: Number((bRoom.y + 0.6).toFixed(1)),
-      width: isMaster ? 2.0 : 1.6,
-      depth: 2.0,
-      rotation: 0,
-      floor: bRoom.floor
-    });
+  frontItems.push({
+    nameAr: 'صالة المعيشة العائلية الرئيسية',
+    nameEn: 'Family Living 1',
+    cat: 'living',
+    color: '#8b5cf6',
+    desc: 'صالة رئيسية مفتوحة ذات واجهة زجاجية مطلة على الشارع/الفناء لتهوية وإضاءة طبيعية.',
+    weight: params.hasMajlis ? 1.45 : 2.1
   });
 
-  // Calculate Built Area and Structural Estimations
+  if (params.hasGarage) {
+    frontItems.push({
+      nameAr: `مرآب السيارات (${params.garageCapacity === 2 ? 'سيارتين' : 'سيارة'})`,
+      nameEn: 'Garage',
+      cat: 'garage',
+      color: '#64748b',
+      desc: 'مرآب مغطى على الواجهة الأمامية بباب أوتوماتيكي ومدخل مباشر للمنزل.',
+      weight: params.garageCapacity === 2 ? 1.35 : 0.95
+    });
+  }
+
+  // Flip horizontal order based on variant & open left/right facade
+  const orderedFront = preferLeftForGuest ? frontItems : [...frontItems].reverse();
+  const frontBoxes = sliceColumns(
+    frontBand,
+    orderedFront.map((i) => i.weight)
+  );
+  orderedFront.forEach((item, idx) => {
+    pushRoom(item.nameAr, item.nameEn, frontBoxes[idx], 0, item.cat, item.color, item.desc);
+  });
+
+  // --- MIDDLE CORE BAND (Courtyard/Lightwell, Stairs, Bathrooms) ---
+  // Put bathrooms on CLOSED neighbor side if one side is closed!
+  const midItems: {
+    nameAr: string;
+    nameEn: string;
+    cat: RoomData['category'];
+    color: string;
+    desc: string;
+    weight: number;
+    id?: string;
+  }[] = [];
+
+  // Guest/Ground Bathroom sits toward closed wall
+  const groundBaths = floors === 1 ? Math.max(1, bathroomsCount) : params.hasMajlis ? 1 : 1;
+  midItems.push({
+    nameAr: params.hasMajlis ? 'مغاسل وحمام الضيوف' : 'حمام الطابق الأرضي',
+    nameEn: 'Ground Bathroom',
+    cat: 'bathroom',
+    color: '#06b6d4',
+    desc: 'خدمات صحية مموضعة في المنطقة الخلفية/الجانبية المغلقة لحفظ الواجهات المفتوحة للغرف.',
+    weight: 0.75
+  });
+
+  if (needStairs) {
+    midItems.push({
+      nameAr: 'الدرج الرئيسي والبهو',
+      nameEn: 'Main Staircase',
+      cat: 'hall',
+      color: '#64748b',
+      desc: 'نواة السلم الخرساني والموزع المركزي الذي يربط كافة الطوابق.',
+      weight: 0.95,
+      id: 'r-stairs-0'
+    });
+  }
+
+  if (includeCourtyard) {
+    midItems.push({
+      nameAr:
+        style === 'algerian'
+          ? 'وسط الدار (فناء مغاربي مفتوح)'
+          : openDirs.length <= 2
+          ? 'منور وفناء تهوية داخلي مشمس'
+          : 'الفناء الداخلي المشمس (كورت يارد)',
+      nameEn: 'Central Courtyard',
+      cat: 'outdoor',
+      color: '#06b6d4',
+      desc: 'فناء مفتوح للسماء يمنح الغرف المحيطة إضاءة وتهوية طبيعية رغم إغلاق واجهات الجيران.',
+      weight: 1.45
+    });
+  } else {
+    midItems.push({
+      nameAr: 'بهو التوزيع الداخلي',
+      nameEn: 'Central Lobby',
+      cat: 'hall',
+      color: '#475569',
+      desc: 'موزع حركي يربط الفضاءات الأمامية بالمطبخ والغرف الخلفية.',
+      weight: 1.15
+    });
+  }
+
+  if (floors === 1 && bathroomsCount >= 2) {
+    midItems.push({
+      id: 'r-bath-shared-0',
+      nameAr: 'حمام العائلة المشترك',
+      nameEn: 'Family Bathroom',
+      cat: 'bathroom',
+      color: '#14b8a6',
+      desc: 'حمام عائلي متكامل بتهوية نحو المنور أو الواجهة المفتوحة.',
+      weight: 0.75
+    });
+  }
+
+  // Place bathrooms against closed left or right wall when applicable
+  const rightClosed = !openDirs.includes('right');
+  const orderedMid = rightClosed ? [...midItems].reverse() : midItems;
+  const midBoxes = sliceColumns(
+    midBand,
+    orderedMid.map((i) => i.weight)
+  );
+  orderedMid.forEach((item, idx) => {
+    pushRoom(item.nameAr, item.nameEn, midBoxes[idx], 0, item.cat, item.color, item.desc, item.id);
+  });
+
+  // --- BACK BAND (y near bY0) ---
+  // Contains: Kitchen(s), Garden (if enabled), and Bedrooms if floors === 1
+  const backItems: {
+    nameAr: string;
+    nameEn: string;
+    cat: RoomData['category'];
+    color: string;
+    desc: string;
+    weight: number;
+    id?: string;
+  }[] = [];
+
+  for (let k = 1; k <= kitchensCount; k++) {
+    backItems.push({
+      nameAr: k === 1 ? (variant === 0 ? 'المطبخ الأمريكي المفتوح مع طعام' : 'المطبخ الرئيسي') : `مطبخ تحضيري ${k}`,
+      nameEn: `Kitchen ${k}`,
+      cat: 'kitchen',
+      color: '#f59e0b',
+      desc: openDirs.includes('back') || openDirs.includes('left') || openDirs.includes('right')
+        ? 'مطبخ مجهز بتهوية وإضاءة طبيعية نحو الواجهة المفتوحة.'
+        : 'مطبخ مجهز بتهوية مباشرة نحو الفناء/المنور الداخلي.',
+      weight: k === 1 ? 1.25 : 0.9
+    });
+  }
+
+  if (params.hasGarden) {
+    backItems.push({
+      nameAr: 'الحديقة والجلسة الخضراء',
+      nameEn: 'Outdoor Garden',
+      cat: 'outdoor',
+      color: '#10b981',
+      desc: 'مساحة خضراء للجلوس والتهوية المتكاملة ضمن حدود الأرض.',
+      weight: 1.2
+    });
+  }
+
+  // If 1 floor, distribute bedrooms across Back Band (and Front corner if needed)
+  if (floors === 1) {
+    for (let b = 1; b <= bedroomsCount; b++) {
+      const isMaster = b === 1;
+      backItems.push({
+        id: `r-bed-${b}`,
+        nameAr: isMaster ? 'جناح النوم الرئيسي (الماستر)' : `غرفة نوم ${b}`,
+        nameEn: isMaster ? 'Master Bedroom' : `Bedroom ${b}`,
+        cat: 'bedroom',
+        color: isMaster ? '#6366f1' : '#3b82f6',
+        desc: 'غرفة نوم متصلة بالواجهات المفتوحة أو الفناء الداخلي للتهوية والإضاءة.',
+        weight: isMaster ? 1.35 : 1.05
+      });
+    }
+  } else if (livingRoomsCount >= 2) {
+    backItems.push({
+      nameAr: 'صالة الطعام والمقلط العائلي',
+      nameEn: 'Dining Room',
+      cat: 'living',
+      color: '#a855f7',
+      desc: 'قاعة طعام متصلة بالمطبخ وتطل على الحديقة أو الفناء الداخلي.',
+      weight: 1.2
+    });
+  }
+
+  // Keep garden/bedrooms toward whichever side is open (back/left/right)
+  const orderedBack = openDirs.includes('right') && !openDirs.includes('left') ? [...backItems].reverse() : backItems;
+  if (orderedBack.length > 4) {
+    // Split into 2 rows inside backBand so bedrooms remain spacious
+    const [bRow1, bRow2] = sliceRows(backBand, [0.5, 0.5]);
+    const half = Math.ceil(orderedBack.length / 2);
+    const r1Items = orderedBack.slice(0, half);
+    const r2Items = orderedBack.slice(half);
+    const r1Boxes = sliceColumns(bRow1, r1Items.map((i) => i.weight));
+    const r2Boxes = sliceColumns(bRow2, r2Items.map((i) => i.weight));
+    r1Items.forEach((it, i) => pushRoom(it.nameAr, it.nameEn, r1Boxes[i], 0, it.cat, it.color, it.desc, it.id));
+    r2Items.forEach((it, i) => pushRoom(it.nameAr, it.nameEn, r2Boxes[i], 0, it.cat, it.color, it.desc, it.id));
+  } else {
+    const backBoxes = sliceColumns(
+      backBand,
+      orderedBack.map((i) => i.weight)
+    );
+    orderedBack.forEach((item, idx) => {
+      pushRoom(item.nameAr, item.nameEn, backBoxes[idx], 0, item.cat, item.color, item.desc, item.id);
+    });
+  }
+
+  // ========================
+  // UPPER FLOORS (f = 1 .. floors - 1)
+  // Non-overlapping zones prioritizing bedrooms along open facades & bathrooms on closed sides
+  // ========================
+  if (floors > 1) {
+    const upperFloorsCount = floors - 1;
+    const stairRef = rooms.find((r) => r.id === 'r-stairs-0');
+
+    for (let f = 1; f < floors; f++) {
+      // Match the exact 3 horizontal bands from Floor 0 so stairs & courtyard voids never collide
+      const [upBackZone, upMidZone, upFrontZone] = sliceRows(
+        { x: bX0, y: bY0, w: bW, l: bL },
+        [backBandRatio, midBandRatio, frontBandRatio]
+      );
+
+      // Staircase Landing at consistent X,Y inside upMidZone
+      if (needStairs && stairRef) {
+        pushRoom(
+          `موزع الدرج (طابق ${f})`,
+          `Staircase Landing Floor ${f}`,
+          { x: stairRef.x, y: upMidZone.y, w: stairRef.width, l: upMidZone.l },
+          f,
+          'hall',
+          '#64748b',
+          'بهو وصول علوي يربط أجنحة النوم والصالة العلوية.',
+          `r-stairs-${f}`
+        );
+      }
+
+      // Distribute bedrooms fairly per floor
+      const bedsStart = Math.floor(((f - 1) * bedroomsCount) / upperFloorsCount) + 1;
+      const bedsEnd = Math.floor((f * bedroomsCount) / upperFloorsCount);
+      const bedsOnThisFloor: number[] = [];
+      for (let b = bedsStart; b <= bedsEnd; b++) bedsOnThisFloor.push(b);
+
+      const hasUpperLiving = f === 1 && livingRoomsCount >= 2;
+      const hasExtraLiving = f >= 2 && livingRoomsCount >= f + 1;
+      const bathsHere = Math.max(1, Math.round(Math.max(1, bathroomsCount - 1) / upperFloorsCount));
+
+      const frontUpperItems: {
+        nameAr: string;
+        nameEn: string;
+        cat: RoomData['category'];
+        color: string;
+        desc: string;
+        weight: number;
+        id?: string;
+      }[] = [];
+
+      const backUpperItems: {
+        nameAr: string;
+        nameEn: string;
+        cat: RoomData['category'];
+        color: string;
+        desc: string;
+        weight: number;
+        id?: string;
+      }[] = [];
+
+      bedsOnThisFloor.forEach((bNum, idx) => {
+        const isMaster = bNum === 1;
+        const item = {
+          id: `r-bed-${bNum}`,
+          nameAr: isMaster
+            ? style === 'algerian'
+              ? 'جناح الماستر الرئيسي (غرفة النوم الكبرى)'
+              : 'جناح غرفة النوم الرئيسية (الماستر)'
+            : `غرفة نوم ${bNum} (${bNum === 2 ? 'الأطفال' : bNum === 3 ? 'الشباب' : 'إضافية'})`,
+          nameEn: isMaster ? 'Master Bedroom Suite' : `Bedroom ${bNum}`,
+          cat: 'bedroom' as const,
+          color: isMaster ? '#6366f1' : '#3b82f6',
+          desc: isMaster
+            ? 'جناح ماستر بإطلالة مباشرة على الواجهة المفتوحة مع حمام خاص وخزانة ملابس.'
+            : 'غرفة نوم مريحة بتوجيه طبيعي للإضاءة والتهوية.',
+          weight: isMaster ? 1.45 : 1.1
+        };
+
+        if (isMaster || idx % 2 === 0) {
+          frontUpperItems.push(item);
+        } else {
+          backUpperItems.push(item);
+        }
+      });
+
+      if (hasUpperLiving || hasExtraLiving) {
+        frontUpperItems.push({
+          nameAr: `صالة الجلوس العلوية (${f === 1 ? 'الأول' : `طابق ${f}`})`,
+          nameEn: `Upper Living ${f}`,
+          cat: 'living',
+          color: '#8b5cf6',
+          desc: 'صالة معيشة عائلية علوية بإطلالة على الواجهة الأمامية أو الشرفة.',
+          weight: 1.25
+        });
+      }
+
+      if (params.hasBalcony && f === 1) {
+        frontUpperItems.push({
+          nameAr: style === 'algerian' ? 'شرفة وتراس مشمس (سطيحة)' : 'شرفة وتراس إطلالة بانورامية',
+          nameEn: 'Balcony Terrace',
+          cat: 'balcony',
+          color: '#ec4899',
+          desc: 'شرفة مطلة على الواجهة المفتوحة فقط مع درابزين حماية زجاجي.',
+          weight: 0.9
+        });
+      }
+
+      // Place upper bathrooms either in upMidZone (beside stair shaft, at most once per side) or backUpperItems
+      const midSpaceRight = stairRef ? (bX0 + bW) - (stairRef.x + stairRef.width) : bW;
+      const midSpaceLeft = stairRef ? stairRef.x - bX0 : 0;
+      let placedLeftMid = false;
+      let placedRightMid = false;
+
+      for (let hb = 1; hb <= bathsHere; hb++) {
+        const bathName = f === 1 && hb === 1 ? 'حمام جناح الماستر الخاص' : `حمام علوي ${hb}`;
+        if (!placedLeftMid && midSpaceLeft >= 2.2) {
+          placedLeftMid = true;
+          pushRoom(
+            bathName,
+            `Upper Bath ${hb}`,
+            { x: bX0, y: upMidZone.y, w: Math.min(2.6, midSpaceLeft), l: upMidZone.l },
+            f,
+            'bathroom',
+            '#14b8a6',
+            'حمام مجهز بتهوية صحية وأطقم راقية وتكسيات بورسلان.',
+            `r-bath-${f}-${hb}`
+          );
+        } else if (!placedRightMid && midSpaceRight >= 2.2) {
+          placedRightMid = true;
+          const bx = stairRef ? stairRef.x + stairRef.width : bX0;
+          pushRoom(
+            bathName,
+            `Upper Bath ${hb}`,
+            { x: bx, y: upMidZone.y, w: Math.min(2.6, midSpaceRight), l: upMidZone.l },
+            f,
+            'bathroom',
+            '#14b8a6',
+            'حمام مجهز بتهوية صحية وأطقم راقية وتكسيات بورسلان.',
+            `r-bath-${f}-${hb}`
+          );
+        } else {
+          backUpperItems.push({
+            id: `r-bath-${f}-${hb}`,
+            nameAr: bathName,
+            nameEn: `Upper Bath ${hb}`,
+            cat: 'bathroom',
+            color: '#14b8a6',
+            desc: 'حمام مجهز بتهوية صحية وأطقم راقية وتكسيات بورسلان.',
+            weight: 0.7
+          });
+        }
+      }
+
+      if (frontUpperItems.length > 0) {
+        const fBoxes = sliceColumns(upFrontZone, frontUpperItems.map((i) => i.weight));
+        frontUpperItems.forEach((it, idx) => pushRoom(it.nameAr, it.nameEn, fBoxes[idx], f, it.cat, it.color, it.desc, it.id));
+      }
+
+      if (backUpperItems.length > 0) {
+        const orderedBackUp = !openDirs.includes('right') ? backUpperItems : [...backUpperItems].reverse();
+        const bBoxes = sliceColumns(upBackZone, orderedBackUp.map((i) => i.weight));
+        orderedBackUp.forEach((it, idx) => pushRoom(it.nameAr, it.nameEn, bBoxes[idx], f, it.cat, it.color, it.desc, it.id));
+      }
+    }
+  }
+
+  // Generate CAD geometry from partitioned rooms & open facades
+  const { walls, columns, openings, furniture } = buildPlanGeometryFromRooms(rooms, normalizedParams, {
+    offsetX,
+    offsetY,
+    footprintL,
+    footprintW
+  });
+
   const buildingFootprintArea = Number((footprintL * footprintW).toFixed(1));
   const totalBuiltArea = Number((buildingFootprintArea * floors * 0.88).toFixed(1));
 
@@ -642,34 +1254,43 @@ export function generateProceduralPlan(
   const costMin = Math.round(totalBuiltArea * costPerM2 * 0.9);
   const costMax = Math.round(totalBuiltArea * costPerM2 * 1.25);
 
-  const wallMatDesc = params.wallMaterial || (
-    style === 'algerian' ? 'طوب أحمر، قرميد قرمزي وجير تقليدي' :
-    style === 'traditional' ? 'حجر جيري أبيض مع مشربيات خشبية' :
-    style === 'luxury' ? 'رخام إيطالي وحجر طبيعي وزجاج بانوراما' :
-    style === 'economic' ? 'بلك إسمنتي عازل وتشطيب اقتصادي' :
-    'خرسانة مسلحة وطوب عازل'
-  );
+  const wallMatDesc =
+    params.wallMaterial ||
+    (style === 'algerian'
+      ? 'طوب أحمر، قرميد قرمزي وجير تقليدي'
+      : style === 'traditional'
+      ? 'حجر جيري أبيض مع مشربيات خشبية'
+      : style === 'luxury'
+      ? 'رخام إيطالي وحجر طبيعي وزجاج بانوراما'
+      : style === 'economic'
+      ? 'بلك إسمنتي عازل وتشطيب اقتصادي'
+      : 'خرسانة مسلحة وطوب عازل');
+
+  const colsCountX = Math.max(3, Math.ceil(footprintL / 4.2) + 1);
+  const colsCountY = Math.max(3, Math.ceil(footprintW / 4.0) + 1);
 
   return {
-    id: `plan-parametric-${optionVariant}-${Date.now()}`,
+    id: `plan-parametric-${variant}-${Date.now()}`,
     timestamp: new Date().toISOString(),
     source: 'procedural',
-    aiModel: 'محرك النمذجة الهندسي البارامتري المطور',
+    aiModel: 'محرك التخطيط الهندسي المعتمد على الواجهات',
     optionTitle: optMeta.title,
     optionBadge: optMeta.badge,
     optionDescription: optMeta.desc,
-    params,
+    params: normalizedParams,
     specs: {
-      title: `${optMeta.title} (${L}م × ${W}م - ${totalBuiltArea}م² مباني)`,
-      summary: `مخطط معماري هندسي بارامتري مخصص بدقة لقطعة أرض ${L}×${W}م بعدد ${bedroomsCount} غرف نوم و ${floors} طوابق ونوع سقف ${roofType === 'flat' ? 'مسطح مع سترة علوية' : 'مائل بقرميد هندسي'}. خامة البناء: ${wallMatDesc}.`,
+      title: `${optMeta.title} (${L}م × ${W}م - ${openDirs.length} واجهات مفتوحة)`,
+      summary: `مخطط هندسي دقيق لقطعة أرض ${L}×${W}م بـ ${openDirs.length} واجهات مفتوحة (${openDirAr})، يضم ${bedroomsCount} غرف نوم و ${floors} طوابق، مع منع النوافذ نهائياً على الجدران الجارية الصماء.`,
       totalLandArea: lotArea,
       totalBuiltArea,
       buildingFootprintArea,
-      recommendedColumnsCount: totalColumns,
-      columnsReasoning: `شبكة أعمدة خرسانية منتظمة (${colsCountX}×${colsCountY} عمود) بمسافات بحور آمنة (3.8 إلى 4.2 متر) لضمان توزيع الأحمال الإنشائية بكفاءة.`,
-      orientationNotes: `توجيه مدروس لكتل البناء والفضاءات الرئيسية نحو الواجهات المفتوحة لضمان الاستفادة من ضوء الشمس والتهوية الطبيعية.`,
-      ventilationNotes: `نظام تهوية متقابلة مع شبابيك واسعة، ${includeCourtyard ? 'وفناء وسطي (وسط الدار) يوفر تيار هواء طبيعي ومنعش.' : 'وممرات حركة تنعش فضاءات المعيشة.'}`,
-      structuralNotes: `نظام إنشائي هيكلي خرساني معتمد، قواعد منفصلة وشريطية، وسقف هوردي عازل للصوت والحرارة بنمط سقف ${roofType === 'flat' ? 'مسطح' : 'مائل'}.`,
+      recommendedColumnsCount: columns.length,
+      columnsReasoning: `شبكة أعمدة خرسانية منتظمة (${colsCountX}×${colsCountY} عمود) بمسافات بحور آمنة لضمان توزيع الأحمال الإنشائية بكفاءة.`,
+      orientationNotes: `تم وضع الصالات والغرف الرئيسية على الواجهات المفتوحة (${openDirAr}) وحصر الحمامات والخدمات نحو الجدران الملاصقة للجار.`,
+      ventilationNotes: includeCourtyard
+        ? `نظام تهوية وإضاءة طبيعية يعتمد على الواجهات المفتوحة والفناء الوسطي (وسط الدار/المنور) لضمان تجدد الهواء في كافة الغرف.`
+        : `نظام تهوية متقابلة عبر الفتحات الموزعة على الواجهات المفتوحة (${openDirAr}).`,
+      structuralNotes: `نظام إنشائي هيكلي خرساني معتمد، قواعد منفصلة وشريطية، وسقف هوردي بنمط ${roofType === 'flat' ? 'مسطح مع سترة' : 'مائل بالقرميد'}.`,
       estimatedCostMin: costMin,
       estimatedCostMax: costMax,
       currency: 'SAR',
@@ -683,44 +1304,27 @@ export function generateProceduralPlan(
     openings,
     furniture,
     materials: {
-      exteriorWallColor: params.facadeWallColor || (style === 'algerian' || style === 'traditional' ? '#fef3c7' : '#f8fafc'),
+      exteriorWallColor:
+        params.facadeWallColor || (style === 'algerian' || style === 'traditional' ? '#fef3c7' : '#f8fafc'),
       interiorWallColor: '#f8fafc',
       roofColor: roofType === 'sloped' ? (style === 'algerian' ? '#b91c1c' : '#7f1d1d') : '#334155',
       windowFrameColor: '#0f172a',
       floorMaterial: style === 'luxury' ? 'رخام فاخر' : 'سيراميك وبورسلان نخب أول'
     },
-    facadeImages: [
-      {
-        id: `f-proc-${optionVariant}-1`,
-        title: `الواجهة الرئيسية (${style} - سقف ${roofType === 'flat' ? 'مسطح' : 'مائل'})`,
-        description: `تصميم معماري لطراز (${style}) لقطعة أرض ${L}×${W}م يعكس توجيهاتك وخامة: ${wallMatDesc}.`,
-        url: style === 'algerian' || style === 'andalusian'
-          ? 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80'
-          : style === 'luxury'
-          ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
-          : 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-        prompt: `Photorealistic ${style} exterior villa facade ${L}x${W} meters, roof type ${roofType}, ${params.customNotes || 'modern architecture'}`
-      },
-      {
-        id: `f-proc-${optionVariant}-2`,
-        title: 'الإضاءة الليلية للواجهة (Night LED View)',
-        description: 'توزيع الإضاءات المخفية LED على الكتل المعمارية وأسوار المنزل.',
-        url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80',
-        prompt: `Luxury ${style} villa exterior at night with warm LED ambient lighting`
-      },
-      {
-        id: `f-proc-${optionVariant}-3`,
-        title: 'المدخل والحديقة (Garden & Courtyard View)',
-        description: 'تنسيق المدخل الخارجي مع المسطحات الخضراء وممر السيارات.',
-        url: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80',
-        prompt: `Villa entrance garden landscaping with modern stone patio`
-      }
-    ]
+    facadeImages: buildStyleFacadeImages(
+      style,
+      roofType,
+      L,
+      W,
+      openDirs,
+      normalizedParams,
+      `f-proc-${variant}`
+    )
   };
 }
 
 /**
- * Generate 3 diverse procedural options adhering to the user's exact inputs.
+ * Generate 3 diverse procedural options adhering strictly to user inputs & open facades.
  */
 export function generateMultipleProceduralOptions(params: HouseInputParams): GeneratedHousePlan[] {
   return [
@@ -731,73 +1335,21 @@ export function generateMultipleProceduralOptions(params: HouseInputParams): Gen
 }
 
 /**
- * Recalculates walls, columns, specs, and updates a plan when the user modifies rooms
- * inside the interactive Room Editor.
+ * Recalculates walls, columns, facade-aware openings, and furniture when the user
+ * modifies rooms inside the interactive Room Editor.
  */
 export function updatePlanWithModifiedRooms(
   originalPlan: GeneratedHousePlan,
   modifiedRooms: RoomData[]
 ): GeneratedHousePlan {
-  const L = originalPlan.params.length || 15;
-  const W = originalPlan.params.width || 10;
-  const floors = originalPlan.params.floorsCount || 1;
-
-  // Recalculate partition walls from modified rooms
-  const walls: WallData[] = [];
-  for (let f = 0; f < floors; f++) {
-    // Keep exterior walls
-    walls.push(
-      { id: `w-${f}-1`, x1: 0, y1: 0, x2: L, y2: 0, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-2`, x1: L, y1: 0, x2: L, y2: W, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-3`, x1: L, y1: W, x2: 0, y2: W, thickness: 0.25, isExterior: true, floor: f },
-      { id: `w-${f}-4`, x1: 0, y1: W, x2: 0, y2: 0, thickness: 0.25, isExterior: true, floor: f }
-    );
-
-    const roomsOnFloor = modifiedRooms.filter((r) => r.floor === f && r.category !== 'outdoor');
-    roomsOnFloor.forEach((rm, idx) => {
-      walls.push(
-        { id: `mod-pw-${f}-${idx}-1`, x1: rm.x, y1: rm.y, x2: rm.x + rm.width, y2: rm.y, thickness: 0.15, isExterior: false, floor: f },
-        { id: `mod-pw-${f}-${idx}-2`, x1: rm.x + rm.width, y1: rm.y, x2: rm.x + rm.width, y2: rm.y + rm.length, thickness: 0.15, isExterior: false, floor: f },
-        { id: `mod-pw-${f}-${idx}-3`, x1: rm.x + rm.width, y1: rm.y + rm.length, x2: rm.x, y2: rm.y + rm.length, thickness: 0.15, isExterior: false, floor: f },
-        { id: `mod-pw-${f}-${idx}-4`, x1: rm.x, y1: rm.y + rm.length, x2: rm.x, y2: rm.y, thickness: 0.15, isExterior: false, floor: f }
-      );
-    });
-  }
-
-  // Recalculate furniture inside updated rooms
-  const furniture: FurnitureData[] = [];
-  modifiedRooms.forEach((rm, idx) => {
-    if (rm.category === 'bedroom') {
-      furniture.push({
-        id: `mod-bed-${idx}`,
-        type: 'bed',
-        label: rm.nameAr.includes('الماستر') ? 'سرير كينج ماستر' : 'سرير نوم',
-        x: Number((rm.x + 0.6).toFixed(1)),
-        y: Number((rm.y + 0.6).toFixed(1)),
-        width: 1.8,
-        depth: 2.0,
-        rotation: 0,
-        floor: rm.floor
-      });
-    } else if (rm.category === 'living') {
-      furniture.push({
-        id: `mod-sofa-${idx}`,
-        type: 'sofa',
-        label: 'طقم كنب الصالة',
-        x: Number((rm.x + 0.6).toFixed(1)),
-        y: Number((rm.y + 0.6).toFixed(1)),
-        width: 3.0,
-        depth: 1.6,
-        rotation: 0,
-        floor: rm.floor
-      });
-    }
-  });
+  const { walls, columns, openings, furniture } = buildPlanGeometryFromRooms(modifiedRooms, originalPlan.params);
 
   return {
     ...originalPlan,
     rooms: modifiedRooms,
     walls,
+    columns,
+    openings,
     furniture
   };
 }

@@ -323,21 +323,21 @@ export const DEFAULT_HOUSE_PLAN: GeneratedHousePlan = {
       id: 'facade-main',
       title: 'الواجهة الأمامية الحداثية',
       description: 'تصميم مودرن بواجهات زجاجية واسعة مع إضاءة معمارية غاطسة ولندسكيب أنيق.',
-      url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+      url: '/images/facades/modern.jpg',
       prompt: 'Photorealistic architectural render of a modern luxury 2-story villa, warm night lighting, minimalist white and concrete exterior facade, large glass windows, car garage'
     },
     {
       id: 'facade-side',
-      title: 'المنظور الجانبي مع الحديقة',
-      description: 'إطلالة جانبية تعكس انسجام الكتل المعمارية والخصوصية مع المسابح والجلسات الخارجية.',
-      url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-      prompt: 'Modern architectural house side elevation with outdoor garden, pool, wooden louvers, contemporary design'
+      title: 'المنظور الجانبي والأقواس الكلاسيكية',
+      description: 'إطلالة جانبية تعكس انسجام الكتل المعمارية وتكسيات الحجر والخشب.',
+      url: '/images/facades/classic.jpg',
+      prompt: 'Modern architectural house side elevation with stone masonry and timber louvers'
     },
     {
       id: 'facade-night',
       title: 'الإضاءة المعمارية الليلية',
-      description: 'تأثير السפوتلايت والليدات المخفية الموزعة هندسياً على العناصر الإنشائية.',
-      url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1200&q=80',
+      description: 'تأثير السبوتلايت والليدات المخفية الموزعة هندسياً على العناصر الإنشائية.',
+      url: '/images/facades/night.jpg',
       prompt: 'Luxury modern house villa facade rendered at dusk with warm LED strip architectural lighting'
     }
   ]

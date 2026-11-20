@@ -1,6 +1,7 @@
 import React from 'react';
-import { Building2, Sparkles, Printer, Layers, Compass, RotateCcw } from 'lucide-react';
+import { Sparkles, Printer, RotateCcw } from 'lucide-react';
 import { Currency } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currency: Currency;
@@ -23,9 +24,11 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Logo and App Title */}
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.6)] border border-cyan-300/40">
-              <Building2 className="w-6 h-6 text-slate-950 font-bold" />
-            </div>
+            <img
+              src="/pwa-192x192.png"
+              alt="ARCH-AI PRO"
+              className="w-11 h-11 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.45)] border border-cyan-400/40 object-cover shrink-0"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white font-sans">
@@ -34,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </h1>
                 <span className="bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-[11px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
                   <Sparkles className="w-3 h-3 text-cyan-400" />
-                  ذكاء اصطناعي
+                  Gemini 4 Hydrogen
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -63,6 +66,8 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             ))}
           </div>
+
+          <PWAInstallButton />
 
           {/* Reset Button */}
           <button

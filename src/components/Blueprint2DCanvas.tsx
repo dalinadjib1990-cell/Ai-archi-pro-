@@ -113,12 +113,43 @@ export const Blueprint2DCanvas: React.FC<Blueprint2DCanvasProps> = ({ plan }) =>
       }
     }
 
-    // 2. Draw Lot Boundary
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(offsetX, offsetY, L * scale, W * scale);
-    ctx.setLineDash([]);
+    // 2. Draw Lot Boundary & Open vs Closed Facade Indicators
+    const openDirs = plan.params.openFacadeDirections || ['front', 'left'];
+    const bx0 = offsetX;
+    const by0 = offsetY;
+    const bx1 = offsetX + L * scale;
+    const by1 = offsetY + W * scale;
+
+    const drawBoundaryEdge = (
+      xA: number,
+      yA: number,
+      xB: number,
+      yB: number,
+      isOpen: boolean,
+      label: string,
+      lx: number,
+      ly: number
+    ) => {
+      ctx.save();
+      ctx.strokeStyle = isOpen ? '#10b981' : '#ef4444';
+      ctx.lineWidth = isOpen ? 2 : 3;
+      ctx.setLineDash(isOpen ? [8, 5] : []);
+      ctx.beginPath();
+      ctx.moveTo(xA, yA);
+      ctx.lineTo(xB, yB);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = isOpen ? '#34d399' : '#f87171';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, lx, ly);
+      ctx.restore();
+    };
+
+    drawBoundaryEdge(bx0, by1, bx1, by1, openDirs.includes('front'), openDirs.includes('front') ? 'واجهة أمامية مفتوحة (الشارع)' : 'واجهة أمامية مغلقة', (bx0 + bx1) / 2, by1 + 18);
+    drawBoundaryEdge(bx0, by0, bx1, by0, openDirs.includes('back'), openDirs.includes('back') ? 'واجهة خلفية مفتوحة' : 'جدار جار خلفي (أصم)', (bx0 + bx1) / 2, by0 - 10);
+    drawBoundaryEdge(bx0, by0, bx0, by1, openDirs.includes('left'), openDirs.includes('left') ? 'يسار مفتوح' : 'جار يسار', bx0 - 32, (by0 + by1) / 2);
+    drawBoundaryEdge(bx1, by0, bx1, by1, openDirs.includes('right'), openDirs.includes('right') ? 'يمين مفتوح' : 'جار يمين', bx1 + 32, (by0 + by1) / 2);
 
     // 3. Draw Rooms with Fills & Labels
     floorRooms.forEach((r) => {
@@ -193,43 +224,80 @@ export const Blueprint2DCanvas: React.FC<Blueprint2DCanvasProps> = ({ plan }) =>
       });
     }
 
-    // 6. Draw Openings (Doors & Windows)
+    // 6. Draw Openings (Doors & Windows) respecting rotation (0/180 horizontal, 90/270 vertical)
     floorOpenings.forEach((op) => {
       const ox = toPxX(op.x);
       const oy = toPxY(op.y);
       const ow = op.width * scale;
+      const isVertical = op.rotation === 90 || op.rotation === 270;
 
       if (op.type === 'door') {
-        // Draw Door Gap
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(ox, oy - 3, ow, 6);
+        if (isVertical) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(ox - 4, oy, 8, ow);
 
-        // Door Panel
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(ox, oy);
-        ctx.lineTo(ox + ow, oy);
-        ctx.stroke();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(op.rotation === 270 ? ox - ow : ox + ow, oy);
+          ctx.stroke();
 
-        // Swing Arc
-        ctx.strokeStyle = '#f59e0b88';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(ox, oy, ow, 0, Math.PI / 2);
-        ctx.stroke();
+          ctx.strokeStyle = '#f59e0b88';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (op.rotation === 270) {
+            ctx.arc(ox, oy, ow, Math.PI / 2, Math.PI);
+          } else {
+            ctx.arc(ox, oy, ow, 0, Math.PI / 2);
+          }
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(ox, oy - 4, ow, 8);
+
+          const swingUp = op.y > W / 2;
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(ox, swingUp ? oy - ow : oy + ow);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#f59e0b88';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (swingUp) {
+            ctx.arc(ox, oy, ow, -Math.PI / 2, 0);
+          } else {
+            ctx.arc(ox, oy, ow, 0, Math.PI / 2);
+          }
+          ctx.stroke();
+        }
       } else if (op.type === 'window') {
-        // Draw Window Gap & Glass Lines
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(ox, oy - 4, ow, 8);
+        if (isVertical) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(ox - 4, oy, 8, ow);
 
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(ox, oy - 3, ow, 6);
-        ctx.beginPath();
-        ctx.moveTo(ox, oy);
-        ctx.lineTo(ox + ow, oy);
-        ctx.stroke();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(ox - 3, oy, 6, ow);
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(ox, oy + ow);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(ox, oy - 4, ow, 8);
+
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(ox, oy - 3, ow, 6);
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(ox + ow, oy);
+          ctx.stroke();
+        }
       }
     });
 

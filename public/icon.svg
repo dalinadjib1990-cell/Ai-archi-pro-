@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="108" fill="#020617"/>
+  <rect x="28" y="28" width="456" height="456" rx="88" stroke="#06b6d4" stroke-opacity="0.25" stroke-width="4"/>
+  <!-- Architectural Grid Accent -->
+  <path d="M96 364H416M96 164H416M146 116V396M366 116V396" stroke="#0891b2" stroke-opacity="0.18" stroke-width="2" stroke-dasharray="8 8"/>
+  <!-- Isometric 3D Architectural Villa Silhouette -->
+  <path d="M256 96L406 176V336L256 416L106 336V176L256 96Z" fill="#0f172a" stroke="#22d3ee" stroke-width="10" stroke-linejoin="round"/>
+  <!-- Roof Ridge & Golden Accent Cantilever -->
+  <path d="M256 96V256M256 256L406 176M256 256L106 176" stroke="#fbbf24" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Upper Level Terrace Slab -->
+  <path d="M156 210L256 156L356 210L256 264L156 210Z" fill="#06b6d4" fill-opacity="0.22" stroke="#38bdf8" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Panoramic Windows & Entrance -->
+  <path d="M148 258L226 298V358L148 318V258Z" fill="#38bdf8" fill-opacity="0.3" stroke="#38bdf8" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M288 296L364 256V318L288 358V296Z" fill="#fbbf24" fill-opacity="0.25" stroke="#fbbf24" stroke-width="5" stroke-linejoin="round"/>
+  <!-- Corner Blueprint Nodes -->
+  <circle cx="256" cy="96" r="8" fill="#fbbf24"/>
+  <circle cx="406" cy="176" r="8" fill="#22d3ee"/>
+  <circle cx="106" cy="176" r="8" fill="#22d3ee"/>
+  <circle cx="256" cy="416" r="8" fill="#22d3ee"/>
+</svg>

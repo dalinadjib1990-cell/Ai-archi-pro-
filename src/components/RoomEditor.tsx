@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sliders,
   Plus,
@@ -37,6 +37,11 @@ export const RoomEditor: React.FC<RoomEditorProps> = ({
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    setRooms([...plan.rooms]);
+    setSelectedRoomId(null);
+  }, [plan]);
 
   // New room modal state
   const [newRoomName, setNewRoomName] = useState<string>('غرفة مكتب وعمل');

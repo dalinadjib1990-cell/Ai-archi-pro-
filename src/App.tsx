@@ -46,12 +46,16 @@ export default function App() {
   // Check if current user inputs differ from the active plan's parameters
   const hasUnappliedInputChanges = React.useMemo(() => {
     if (!currentPlan?.params) return false;
+    const curDirs = (currentPlan.params.openFacadeDirections || []).join(',');
+    const nextDirs = (params.openFacadeDirections || []).join(',');
     return (
       params.length !== currentPlan.params.length ||
       params.width !== currentPlan.params.width ||
       params.bedroomsCount !== currentPlan.params.bedroomsCount ||
       params.bathroomsCount !== currentPlan.params.bathroomsCount ||
       params.floorsCount !== currentPlan.params.floorsCount ||
+      params.facadesCount !== currentPlan.params.facadesCount ||
+      nextDirs !== curDirs ||
       params.hasMajlis !== currentPlan.params.hasMajlis ||
       params.hasGarage !== currentPlan.params.hasGarage ||
       params.hasGarden !== currentPlan.params.hasGarden ||
@@ -61,6 +65,9 @@ export default function App() {
       params.roofType !== currentPlan.params.roofType ||
       params.targetBuiltArea !== currentPlan.params.targetBuiltArea ||
       params.style !== currentPlan.params.style ||
+      params.wallMaterial !== currentPlan.params.wallMaterial ||
+      params.facadeWallColor !== currentPlan.params.facadeWallColor ||
+      params.accentColor !== currentPlan.params.accentColor ||
       params.customNotes !== currentPlan.params.customNotes
     );
   }, [params, currentPlan]);
@@ -89,9 +96,9 @@ export default function App() {
         setSelectedOptionIndex(0);
         setActiveTab('3d');
         if (data.source === 'gemini') {
-          setAiSuccessBadge(`تم التوليد بنجاح عبر الذكاء الاصطناعي الفعلي Gemini (${data.modelUsed || 'Gemini Flash'})`);
+          setAiSuccessBadge(`تم التوليد بنجاح عبر محرك الذكاء الاصطناعي (${data.modelUsed || 'Gemini 4 Hydrogen'})`);
         } else {
-          setAiSuccessBadge('تم إنشاء 3 نماذج معمارية مخصصة لمدخلاتك بدقة');
+          setAiSuccessBadge('تم إنشاء 3 نماذج معمارية مخصصة لمدخلاتك وواجهاتك بدقة');
         }
       } else {
         // Fallback to client procedural generator options

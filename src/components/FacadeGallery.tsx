@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, Image, Maximize2, RefreshCw, Wand2, Download } from 'lucide-react';
 import { GeneratedHousePlan, FacadeImageData } from '../types';
 
@@ -11,30 +11,42 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
   const [selectedImage, setSelectedImage] = useState<FacadeImageData | null>(null);
   const [isGeneratingImg, setIsGeneratingImg] = useState<boolean>(false);
   const [customPrompt, setCustomPrompt] = useState<string>('');
+  const [genError, setGenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setImages(plan.facadeImages || []);
+  }, [plan]);
 
   const handleGenerateNewFacade = async () => {
     setIsGeneratingImg(true);
+    setGenError(null);
     try {
-      const prompt = customPrompt.trim() || `Modern ${plan.params.style} house exterior facade, luxury villa ${plan.params.length}x${plan.params.width} meters with car garage and garden lighting`;
+      const openDirs = (plan.params.openFacadeDirections || ['front']).join(', ');
+      const prompt =
+        customPrompt.trim() ||
+        `Photorealistic ${plan.params.style} architectural villa exterior facade, ${plan.params.length}x${plan.params.width} meters, ${plan.params.floorsCount} floors, ${plan.params.roofType} roof, open facades: ${openDirs}, ${plan.params.wallMaterial || ''}`;
       const res = await fetch('/api/generate-facade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, aspectRatio: '16:9' }),
+        body: JSON.stringify({ prompt, aspectRatio: '16:9', style: plan.params.style }),
       });
       const data = await res.json();
       if (data.success && data.imageUrl) {
         const newImg: FacadeImageData = {
           id: `facade-ai-${Date.now()}`,
-          title: customPrompt ? 'واجهة مخصصة جديدة' : 'واجهة معماري جديدة 3D',
-          description: `تصميم معمار معالج بالذكاء الاصطناعي على طراز ${plan.params.style}`,
+          title: customPrompt ? 'واجهة مخصصة جديدة' : 'واجهة معمارية جديدة 3D',
+          description: `تصميم معالج بالذكاء الاصطناعي لطراز ${plan.params.style}`,
           url: data.imageUrl,
           prompt,
         };
-        setImages([newImg, ...images]);
+        setImages((prev) => [newImg, ...prev]);
         setCustomPrompt('');
+      } else {
+        setGenError(data.error || 'تعذر توليد صورة واجهة جديدة حالياً.');
       }
     } catch (e) {
       console.error('Failed to generate facade image:', e);
+      setGenError('حدث خطأ في الاتصال بالخادم لتوليد الواجهة.');
     } finally {
       setIsGeneratingImg(false);
     }
@@ -104,6 +116,11 @@ export const FacadeGallery: React.FC<FacadeGalleryProps> = ({ plan }) => {
             </button>
           ))}
         </div>
+        {genError && (
+          <div className="text-xs text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded-xl px-3 py-2">
+            {genError}
+          </div>
+        )}
       </div>
 
       {/* Images Grid */}
